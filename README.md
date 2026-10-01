@@ -25,7 +25,7 @@ npm run api     # in one terminal; serves the private API on 127.0.0.1:8787
 npm run dev     # in another terminal; Vite proxies /api to the local API
 ```
 
-Open the local URL printed by Vite. For Microsoft Graph, copy `.env.example` values into the API process environment and register the matching redirect URI in Microsoft Entra. Configure delegated `User.Read` and `Files.Read` permissions with consent as required by your organization. Keep the client secret in the API environment. `npm run build` creates the production frontend in `dist/`; `npm run preview` serves that build locally.
+Open the local URL printed by Vite. For Microsoft Graph, copy `.env.example` to `.env`, fill the API secrets, and register the matching redirect URI in Microsoft Entra. Configure delegated `User.Read` and `Files.Read` permissions with consent as required by your organization. Keep the client secret out of browser code. `npm run build` creates the production frontend in `dist/`; `npm run preview` serves that build locally.
 
 ## Commands
 

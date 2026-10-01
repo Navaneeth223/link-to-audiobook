@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import crypto from 'node:crypto';
 import dns from 'node:dns/promises';
 import https from 'node:https';

@@ -4,6 +4,6 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": { "dev": "vite", "api": "node server/index.mjs", "build": "tsc -b && vite build", "check": "tsc -b", "test": "vitest run", "preview": "vite preview" },
-  "dependencies": { "@vitejs/plugin-react": "latest", "@azure/msal-node": "^3.7.3", "express": "^5.1.0", "express-rate-limit": "^7.5.0", "express-session": "^1.18.1", "helmet": "^8.0.0", "vite": "latest", "typescript": "latest", "react": "latest", "react-dom": "latest", "lucide-react": "^0.468.0", "pdfjs-dist": "^4.10.38", "mammoth": "^1.9.0", "jszip": "^3.10.1" },
+  "dependencies": { "@vitejs/plugin-react": "latest", "@azure/msal-node": "^3.7.3", "dotenv": "^16.4.7", "express": "^5.1.0", "express-rate-limit": "^7.5.0", "express-session": "^1.18.1", "helmet": "^8.0.0", "vite": "latest", "typescript": "latest", "react": "latest", "react-dom": "latest", "lucide-react": "^0.468.0", "pdfjs-dist": "^4.10.38", "mammoth": "^1.9.0", "jszip": "^3.10.1" },
   "devDependencies": { "@types/react": "latest", "@types/react-dom": "latest", "vitest": "latest", "jsdom": "latest", "@testing-library/react": "latest", "@testing-library/jest-dom": "latest" }
 }

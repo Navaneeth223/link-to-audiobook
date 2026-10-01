@@ -14,7 +14,7 @@ describe('Microsoft link and redirect security', () => {
     expect(graphShareId(url)).toBe(`u!${Buffer.from(url).toString('base64url')}`);
   });
   it('rejects private, local, mapped, and reserved destination IPs', () => {
-    for (const ip of ['127.0.0.1', '10.0.0.1', '172.20.0.1', '192.168.1.3', '169.254.10.2', '::1', 'fd00::1', '::ffff:127.0.0.1']) expect(publicAddress(ip)).toBe(false);
+    for (const ip of ['127.0.0.1', '10.0.0.1', '172.20.0.1', '192.168.1.3', '169.254.10.2', '192.0.2.1', '198.51.100.5', '203.0.113.5', '::1', 'fd00::1', 'fe80::1', 'ff02::1', '2002::1', '2001:db8::1', '64:ff9b::7f00:1', '::ffff:127.0.0.1']) expect(publicAddress(ip)).toBe(false);
     expect(publicAddress('8.8.8.8')).toBe(true);
   });
 });
