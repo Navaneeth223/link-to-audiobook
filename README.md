@@ -7,6 +7,7 @@ A local first audiobook style reader for documents you already have permission t
 - Local file selection and in browser text extraction for TXT, Markdown, PDF, DOCX, and EPUB. PDF text extraction preserves page order; scanned PDFs need OCR, which is not included.
 - Metadata only chapter detection and paragraph navigation. Extracted wording is not rewritten.
 - Browser SpeechSynthesis playback in sentence chunks, automatic chapter advance, sentence highlighting, pause/resume, speed choices, and follow narration.
+- Touch friendly drag and drop uploads, distinct previous/next sentence and paragraph controls, and a draggable paragraph progress slider.
 - Local story search, persistent device-only bookmarks, reading themes, text sizing, keyboard shortcuts, and clear story.
 - Playback position is stored as chapter and paragraph indices in local storage. The story contents are not stored there.
 - 40 MB upload limit.
@@ -51,4 +52,4 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for module boundaries and the safe exte
 
 ## Optional project support
 
-The home screen includes an optional support panel. After setting up a payment destination with a provider such as Ko-fi or GitHub Sponsors, put that HTTPS checkout/profile URL in `VITE_SUPPORT_URL` before building or deploying. Payment is handled on the provider's site; this app does not collect payment information. Keep support optional and do not describe contributions as tax-deductible unless the project has the legal status to support that claim.
+The home screen includes an optional support panel. After setting up a payment destination with a provider such as Ko-fi or GitHub Sponsors, put that HTTPS checkout/profile URL in `VITE_SUPPORT_URL` and restart Vite or rebuild before deploying. The destination is intentionally unset until the owner has a verified payment account. Payment is handled on the provider's site; this app does not collect payment information. Keep support optional and do not describe contributions as tax-deductible unless the project has the legal status to support that claim.
