@@ -7,7 +7,7 @@ A local first audiobook style reader for documents you already have permission t
 - Local file selection and in browser text extraction for TXT, Markdown, PDF, DOCX, and EPUB. PDF text extraction preserves page order; scanned PDFs need OCR, which is not included.
 - Metadata only chapter detection and paragraph navigation. Extracted wording is not rewritten.
 - Browser SpeechSynthesis playback in sentence chunks, automatic chapter advance, sentence highlighting, pause/resume, speed choices, and follow narration.
-- Local story search, session bookmarks, reading themes, text sizing, keyboard shortcuts, and clear story.
+- Local story search, persistent device-only bookmarks, reading themes, text sizing, keyboard shortcuts, and clear story.
 - Playback position is stored as chapter and paragraph indices in local storage. The story contents are not stored there.
 - 40 MB upload limit.
 
@@ -43,8 +43,12 @@ Local uploads are processed in the browser. Speech uses the device's selected br
 
 - Microsoft Graph only reads documents the signed-in account can access; tenant policies and sharing restrictions still apply. No external neural TTS provider, OCR, audio chunk cache, permanent library, or deployment recipe for a particular host is included.
 - Browser speech voice availability and voice quality vary by OS/browser. Browser speech does not expose precise word timing; sentence highlights follow the active speech chunk.
-- Bookmarks live only for the current page session. Search stays in memory and in the browser.
+- Search stays in memory and in the browser. Bookmarks and playback position use local storage and can be removed with **Forget this story**.
 - The reader currently renders one chapter at a time. Very large chapters are not virtualized.
 - Theme follows the selected reading theme; a separate system dark mode preference is not implemented.
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) for module boundaries and the safe extension path for provider integrations.
+
+## Optional project support
+
+The home screen includes an optional support panel. After setting up a payment destination with a provider such as Ko-fi or GitHub Sponsors, put that HTTPS checkout/profile URL in `VITE_SUPPORT_URL` before building or deploying. Payment is handled on the provider's site; this app does not collect payment information. Keep support optional and do not describe contributions as tax-deductible unless the project has the legal status to support that claim.
