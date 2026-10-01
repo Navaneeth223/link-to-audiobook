@@ -6,8 +6,8 @@ Audit date: 2026-10-02. Status is based on the tracked source and current packag
 
 | Requirement | Status | Evidence |
 |---|---|---|
-| AGPL-3.0-or-later license, badge, and license section | MISSING | No root `LICENSE`; `README.md` currently says no license is selected. |
-| Contact email on all legal/security policies | PARTIAL | `SECURITY.md`, `docs/PRIVACY.md`, and other `docs/*.md`; verify per document. |
+| AGPL-3.0-or-later license, badge, and license section | DONE | `LICENSE`, `README.md`, `CONTRIBUTING.md`. |
+| Contact email on required legal/security policies | DONE | `SECURITY.md`, `docs/PRIVACY.md`, `docs/TERMS.md`, `docs/COPYRIGHT-AND-TAKEDOWN.md`, `docs/VOICE-DATA.md`. |
 | Describe voluntary donations accurately | PARTIAL | `README.md`, `docs/DONATIONS.md`, `src/core/donationLinks.ts`; no real destination is configured. |
 | No paid service or mandatory API key | PARTIAL | `README.md`; optional Microsoft OAuth is required for current shared-link path. |
 | Domain values configured through env and documented | MISSING | No `docs/DEPLOYMENT.md`. |
@@ -37,18 +37,18 @@ Audit date: 2026-10-02. Status is based on the tracked source and current packag
 
 | Requirement | Status | Evidence |
 |---|---|---|
-| Health response with version/provider flags | MISSING | `server/index.mjs` currently returns `microsoftConfigured`, with no version. |
-| Startup env self-check without secrets | MISSING | `server/index.mjs` startup only prints listen address. |
+| Health response with version/provider flags | DONE | `server/index.mjs` returns `{ok, version, providersConfigured.microsoftOAuth}`. |
+| Startup env self-check without secrets | DONE | `server/env.mjs` logs presence booleans only; `server/index.mjs` calls it at startup. |
 | Clear API-down/sign-in/provider/access/document UI states | PARTIAL | `src/core/http.ts`, `src/ui/App.tsx`; no status check action verified. |
-| Shared API handlers for local Node and Vercel | MISSING | `server/index.mjs` starts Express directly; no root `api/` functions or `vercel.json`. |
-| Vercel payload/time limits and chunking | MISSING | `server/index.mjs` buffers up to 40 MB; no chunk protocol. |
-| Typed fail-fast env loader and complete variable documentation | MISSING | `.env.example` exists; env reads are inline in `server/index.mjs`. |
+| Local Node and Vercel API entry points | PARTIAL | `server/index.mjs`, `api/[...path].mjs`, `vercel.json`; Express remains the shared implementation, not framework-agnostic handlers. |
+| Vercel payload/time limits and chunking | PARTIAL | `server/env.mjs` caps Vercel downloads to 4 MiB and `vercel.json` sets 10 seconds; no chunk/range protocol. |
+| Typed fail-fast env loader and complete variable documentation | PARTIAL | `server/env.mjs`, `.env.example`, `docs/DEPLOYMENT.md`; runtime config has JSDoc typing, not compile-time schema validation. |
 | Anonymous OneDrive and 1drv.ms links | MISSING | `server/index.mjs` requires OAuth before Graph retrieval. |
 | Redirect-by-redirect SSRF/DNS-rebinding protection | PARTIAL | `server/security.mjs`, `server/index.mjs`; download host is pinned, but short-link redirect resolution is not implemented. |
-| MIME/disposition/magic-byte document detection | PARTIAL | `server/index.mjs` validates Graph filename extension and size; bytes are not type-verified. |
+| MIME/disposition/magic-byte document detection | PARTIAL | `server/security.mjs` checks MIME, suggested filename, HTML signatures and file magic; DOCX/EPUB ZIP contents are not inspected server-side. |
 | OAuth PKCE/state/server-side token storage | PARTIAL | `server/index.mjs` uses state, PKCE and session memory; scopes include `User.Read`; storage is not production durable. |
 | Required API/security regression tests | PARTIAL | `server/security.test.ts`; no route integration coverage for listed cases. |
-| Click-by-click deployment documentation | MISSING | No `docs/DEPLOYMENT.md`. |
+| Click-by-click deployment documentation | PARTIAL | `docs/DEPLOYMENT.md` describes Vercel, Entra, API alternative, env values, redeploy and health check; screenshots and verified current portal labels are not supplied. |
 
 ## Phase 2 — Tooling and checks
 
@@ -103,7 +103,7 @@ Audit date: 2026-10-02. Status is based on the tracked source and current packag
 | GitHub funding file and README support instructions | PARTIAL | `.github/FUNDING.yml`, `README.md`; funding destinations remain empty/configurable. |
 | Privacy, terms, takedown, storage, voice and donations policies | PARTIAL | `docs/PRIVACY.md`, `docs/TERMS.md`, `docs/COPYRIGHT-AND-TAKEDOWN.md`, `docs/LOCAL-STORAGE.md`, `docs/VOICE-DATA.md`, `docs/DONATIONS.md`; legal contact/review wording needs audit. |
 | Exact privacy-at-a-glance message and data deletion verification | PARTIAL | `src/ui/App.tsx`, `src/core/privacyData.ts`; exact copy and storage-backend verification need audit. |
-| LICENSE, third-party records, DCO, code of conduct, security, templates | PARTIAL | `THIRD_PARTY_LICENSES.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`; LICENSE and issue/PR templates are absent; DCO needs instructions. |
+| LICENSE, third-party records, DCO, code of conduct, security, templates | DONE | `LICENSE`, `THIRD_PARTY_LICENSES.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `.github/ISSUE_TEMPLATE/`, `.github/PULL_REQUEST_TEMPLATE.md`; maintainers still need to supply real funding destinations. |
 
 ## Phase 8 — Security regression
 

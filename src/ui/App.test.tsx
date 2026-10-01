@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 import { documentFingerprint } from '../core/bookmarks';
@@ -80,7 +80,7 @@ describe('reader import interactions', () => {
     render(<App />);
     fireEvent.click(screen.getByRole('button', { name: 'Privacy' }));
     expect(screen.getByRole('dialog', { name: 'Privacy policy' })).toBeTruthy();
-    expect(screen.getByText(/Your story is processed for reading and isn't publicly shared\./)).toBeTruthy();
+    expect(within(screen.getByRole('dialog', { name: 'Privacy policy' })).getByText(/Your story is processed for reading and isn't publicly shared\./)).toBeTruthy();
   });
 
   it('shows local storage items and reports what Clear everything removed', async () => {

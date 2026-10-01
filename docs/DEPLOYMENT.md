@@ -57,7 +57,7 @@ All example values are in `.env.example`. Never place secrets in a `VITE_` varia
 
 ## Before public launch
 
-- Configure GitHub Sponsors or other support links in `VITE_DONATION_LINKS` only after verifying the maintainer-owned account URLs. The app never handles card details; gifts do not unlock features and are not represented as tax-deductible.
+- Configure GitHub Sponsors or other support links in `VITE_DONATION_LINKS` only after verifying the maintainer-owned account URLs. The app never handles card details and gifts do not unlock features.
 - Add an owned domain later, configure it with the hosting provider, then update `APP_ORIGINS`, `MICROSOFT_REDIRECT_URI`, and any `VITE_API_BASE_URL` before redeploying.
 - Have a qualified lawyer review the good-faith policy templates for applicable GDPR, India DPDP Act 2023, CCPA, and voice/biometric rules.
 - Configure a protected production session store before enabling Microsoft OAuth on a multi-instance deployment.
