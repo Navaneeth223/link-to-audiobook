@@ -1,6 +1,6 @@
 # Privacy policy
 
-**Status:** Good-faith project template, not legal advice. The maintainer should have this reviewed for the places where the hosted application is offered, including applicable GDPR, India DPDP Act, CCPA, children's privacy, and voice-data requirements. Add a private contact method before public launch.
+**Status:** Good-faith project template, not legal advice. A qualified lawyer should review this for applicable GDPR, India DPDP Act 2023, CCPA, children's privacy, and voice-data requirements before public launch. Contact: navaneethkv.dev@gmail.com.
 
 Your story is processed for reading and isn't publicly shared.
 
@@ -25,7 +25,7 @@ Microsoft receives requests for documents opened through its sharing service. Do
 
 ## Your choices
 
-You can use local files without signing in, remove the current story's local position and bookmarks with **Forget this story**, and clear browser site data using browser controls. Microsoft sign-in is required when the deployment's configured Graph flow requests it. Contact the maintainer through the repository for privacy questions or requests; the maintainer should publish a dedicated contact address before a public service launch.
+You can use local files without signing in, remove the current story's local position and bookmarks with **Forget this story**, and clear browser site data using browser controls. Microsoft sign-in is required when the deployment's configured Graph flow requests it. Contact navaneethkv.dev@gmail.com for privacy questions or requests.
 
 ## Children and updates
 

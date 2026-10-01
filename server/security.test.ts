@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { graphShareId, publicAddress, readJsonResponse, validShareUrl } from './security.mjs';
+import { graphShareId, publicAddress, readableDocumentType, readJsonResponse, validShareUrl } from './security.mjs';
 
 describe('Microsoft link and redirect security', () => {
   it('allows HTTPS Microsoft sharing hosts and rejects lookalikes', () => {
@@ -21,5 +21,11 @@ describe('Microsoft link and redirect security', () => {
     await expect(readJsonResponse(new Response(null), 'Microsoft returned an empty or invalid response for this sharing link. Check the link and try again.')).rejects.toMatchObject({ status: 502, message: 'Microsoft returned an empty or invalid response for this sharing link. Check the link and try again.' });
     await expect(readJsonResponse(new Response('<html>login</html>'))).rejects.toMatchObject({ status: 502 });
     await expect(readJsonResponse(new Response('{"name":"story.txt"}'))).resolves.toEqual({ name: 'story.txt' });
+  });
+  it('detects supported formats and rejects HTML sign-in responses', () => {
+    expect(readableDocumentType(Buffer.from('%PDF-1.7'), { name: 'book.pdf', contentType: 'application/pdf' })).toBe('pdf');
+    expect(readableDocumentType(Buffer.from('PK\x03\x04'), { name: 'book.epub', contentType: 'application/epub+zip' })).toBe('epub');
+    expect(readableDocumentType(Buffer.from('<!doctype html><title>Sign in</title>'), { name: 'book.pdf', contentType: 'text/html' })).toBeNull();
+    expect(readableDocumentType(Buffer.from('text'), { name: 'book.txt', contentType: 'text/html' })).toBeNull();
   });
 });

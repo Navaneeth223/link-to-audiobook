@@ -22,7 +22,8 @@ describe('reader import interactions', () => {
     render(<App />);
     fireEvent.change(screen.getByLabelText('A link to your story'), { target: { value: 'https://onedrive.live.com/?id=sample' } });
     fireEvent.submit(screen.getByLabelText('A link to your story').closest('form')!);
-    expect(await screen.findByText(/document service is unavailable/i)).toBeTruthy();
+    expect(await screen.findByText(/reader API could not complete/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Check status' })).toBeTruthy();
   });
 
   it('opens a file dropped onto the landing page', async () => {

@@ -1,6 +1,6 @@
 # Terms of use
 
-**Status:** Good-faith project template, not legal advice. Have this reviewed for the jurisdictions where the application is offered. The repository does not yet contain a selected software license; a maintainer must choose one before stating that reuse is licensed.
+**Status:** Good-faith project template, not legal advice. A qualified lawyer should review it for applicable GDPR, India DPDP Act 2023, CCPA, and voice/biometric rules before public launch. Contact: navaneethkv.dev@gmail.com. The source code is licensed under AGPL-3.0-or-later; that license does not grant rights to user documents.
 
 Use the reader only for documents you are authorized to access and process. You are responsible for respecting copyright, confidentiality, contract, and account-access rules. The application does not grant rights to any story or document, and does not bypass sign-in, sharing restrictions, or DRM.
 

@@ -6,6 +6,23 @@ export function validShareUrl(value) {
   return url.protocol === 'https:' && !url.username && !url.password && !url.port && allowedShareHosts.some(domain => url.hostname === domain || url.hostname.endsWith(`.${domain}`));
 }
 export function graphShareId(url) { return `u!${Buffer.from(url, 'utf8').toString('base64url')}`; }
+export function readableDocumentType(bytes, { name = '', contentType = '', disposition = '' } = {}) {
+  const hintedName = /filename\*?=(?:UTF-8''|\")?([^;\"]+)/i.exec(disposition)?.[1];
+  let filename = name;
+  try { if (hintedName) filename = decodeURIComponent(hintedName); } catch { return null; }
+  filename = filename.split(/[\\/]/).at(-1) || '';
+  const extension = /\.([a-z0-9]+)$/i.exec(filename)?.[1]?.toLowerCase() || '';
+  const mime = contentType.split(';', 1)[0].trim().toLowerCase();
+  const start = bytes.subarray(0, 512).toString('utf8').replace(/^\uFEFF/, '').trimStart().toLowerCase();
+  if (mime === 'text/html' || /^<(?:!doctype\s+html|html|head|body)\b/.test(start)) return null;
+  if (extension === 'pdf') return bytes.subarray(0, 5).toString('ascii') === '%PDF-' ? 'pdf' : null;
+  if (extension === 'docx' || extension === 'epub') return bytes.length >= 4 && bytes.subarray(0, 2).toString('ascii') === 'PK' ? extension : null;
+  if (['txt', 'md', 'markdown'].includes(extension)) {
+    if (bytes.includes(0)) return null;
+    return ['text/plain', 'text/markdown', 'application/octet-stream', ''].includes(mime) ? extension : null;
+  }
+  return null;
+}
 export async function readJsonResponse(response, message = 'Microsoft returned an unreadable document response.') {
   let body = '';
   try { body = await response.text(); } catch { /* Surface a safe provider error below. */ }

@@ -1,22 +1,22 @@
 name: Bug report
-description: Report a reproducible reader problem
+description: Report a reproducible problem without sharing private story data.
 body:
   - type: textarea
-    id: problem
+    id: summary
     attributes:
       label: What happened?
-      description: Do not include private story text, sharing links, tokens, or voice recordings.
-    validations:
-      required: true
-  - type: textarea
-    id: reproduce
-    attributes:
-      label: Steps to reproduce
+      description: Do not include story text, private share URLs, OAuth data, or recordings.
     validations:
       required: true
   - type: input
-    id: browser
+    id: environment
     attributes:
       label: Browser and device
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
     validations:
       required: true

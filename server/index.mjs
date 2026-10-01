@@ -1,4 +1,3 @@
-import 'dotenv/config';
 import crypto from 'node:crypto';
 import dns from 'node:dns/promises';
 import https from 'node:https';
@@ -8,28 +7,29 @@ import session from 'express-session';
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import { ConfidentialClientApplication } from '@azure/msal-node';
-import { graphShareId, publicAddress, readJsonResponse, validShareUrl } from './security.mjs';
+import { graphShareId, publicAddress, readableDocumentType, readJsonResponse, validShareUrl } from './security.mjs';
+import { config, logEnvironmentCheck } from './env.mjs';
 
 const app = express();
-if (process.env.NODE_ENV === 'production') app.set('trust proxy', 1);
-const PORT = Number(process.env.PORT || 8787);
-const APP_ORIGIN = process.env.APP_ORIGIN || 'http://localhost:5173';
-const MAX_BYTES = 40 * 1024 * 1024;
-const isConfigured = Boolean(process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET && process.env.SESSION_SECRET);
-const redirectUri = process.env.MICROSOFT_REDIRECT_URI || `http://localhost:${PORT}/api/auth/callback`;
-const msal = isConfigured ? new ConfidentialClientApplication({ auth: { clientId: process.env.MICROSOFT_CLIENT_ID, authority: `https://login.microsoftonline.com/${process.env.MICROSOFT_TENANT_ID || 'common'}`, clientSecret: process.env.MICROSOFT_CLIENT_SECRET } }) : null;
-const scopes = ['User.Read', 'Files.Read'];
+if (process.env.NODE_ENV === 'production' || config.vercel) app.set('trust proxy', 1);
+const MAX_BYTES = config.maxDocumentBytes;
+const MAX_MB = Math.floor(MAX_BYTES / (1024 * 1024));
+const isConfigured = Boolean(config.clientId && config.clientSecret && config.sessionSecret);
+const redirectUri = config.redirectUri;
+const msal = isConfigured ? new ConfidentialClientApplication({ auth: { clientId: config.clientId, authority: `https://login.microsoftonline.com/${config.tenantId}`, clientSecret: config.clientSecret } }) : null;
+const scopes = ['Files.Read', 'offline_access', 'openid'];
 function apiError(res, status, code, message) { return res.status(status).json({ ok: false, error: { code, message } }); }
 
 app.disable('x-powered-by');
 app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc: ["'none'"], frameAncestors: ["'none'"], baseUri: ["'none'"], formAction: ["'self'", 'https://login.microsoftonline.com'] } }, crossOriginResourcePolicy: { policy: 'same-origin' } }));
 app.use((req, res, next) => {
-  if (req.headers.origin && req.headers.origin !== APP_ORIGIN) return apiError(res, 403, 'ORIGIN_NOT_ALLOWED', 'This request origin is not allowed.');
-  if (req.method === 'POST' && req.headers.origin !== APP_ORIGIN) return apiError(res, 403, 'ORIGIN_VALIDATION_FAILED', 'Request origin validation failed.');
+  if (req.headers.origin && !config.origins.includes(req.headers.origin)) return apiError(res, 403, 'ORIGIN_NOT_ALLOWED', 'This request origin is not allowed.');
+  if (req.headers.origin) { res.setHeader('Access-Control-Allow-Origin', req.headers.origin); res.setHeader('Vary', 'Origin'); res.setHeader('Access-Control-Allow-Credentials', 'true'); }
+  if (req.method === 'OPTIONS') { res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS'); res.setHeader('Access-Control-Allow-Headers', 'Content-Type'); return res.status(204).end(); }
   res.setHeader('Cache-Control', 'no-store'); next();
 });
 app.use(express.json({ limit: '8kb', type: 'application/json' }));
-app.use(session({ name: 'psr.sid', secret: process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex'), resave: false, saveUninitialized: false, cookie: { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 60 * 60 * 1000 } }));
+app.use(session({ name: 'psr.sid', secret: config.sessionSecret || crypto.randomBytes(32).toString('hex'), resave: false, saveUninitialized: false, cookie: { httpOnly: true, secure: process.env.NODE_ENV === 'production' || config.vercel, sameSite: process.env.NODE_ENV === 'production' || config.vercel ? 'none' : 'lax', maxAge: 60 * 60 * 1000 } }));
 app.use('/api', rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: 'draft-7', legacyHeaders: false, handler: (_req, res) => apiError(res, 429, 'RATE_LIMITED', 'Too many requests. Please wait and try again.') }));
 
 async function downloadPinned(urlString) {
@@ -41,11 +41,12 @@ async function downloadPinned(urlString) {
   return new Promise((resolve, reject) => {
     const request = https.get({ hostname: url.hostname, path: `${url.pathname}${url.search}`, servername: url.hostname, lookup: (_host, _opts, callback) => callback(null, addresses[0].address, net.isIPv4(addresses[0].address) ? 4 : 6), timeout: 20_000 }, response => {
       if (response.statusCode !== 200) { response.resume(); reject(new Error('The document could not be downloaded from Microsoft.')); return; }
+      const headers = { contentType: String(response.headers['content-type'] || ''), disposition: String(response.headers['content-disposition'] || '') };
       const declared = Number(response.headers['content-length'] || 0);
-      if (declared > MAX_BYTES) { response.destroy(); reject(new Error('This document is larger than the 40 MB limit.')); return; }
+      if (declared > MAX_BYTES) { response.destroy(); reject(new Error(`This document is larger than the ${MAX_MB} MB limit.`)); return; }
       const chunks = []; let length = 0;
-      response.on('data', chunk => { length += chunk.length; if (length > MAX_BYTES) { response.destroy(new Error('This document is larger than the 40 MB limit.')); return; } chunks.push(chunk); });
-      response.on('end', () => resolve(Buffer.concat(chunks)));
+      response.on('data', chunk => { length += chunk.length; if (length > MAX_BYTES) { response.destroy(new Error(`This document is larger than the ${MAX_MB} MB limit.`)); return; } chunks.push(chunk); });
+      response.on('end', () => resolve({ bytes: Buffer.concat(chunks), ...headers }));
       response.on('error', reject);
     });
     request.on('timeout', () => request.destroy(new Error('Microsoft document download timed out.')));
@@ -54,7 +55,7 @@ async function downloadPinned(urlString) {
 }
 function requireConfigured(req, res, next) { if (!msal) return apiError(res, 503, 'MICROSOFT_NOT_CONFIGURED', 'Microsoft sign-in is not configured on this server.'); next(); }
 
-app.get('/api/health', (_req, res) => res.json({ ok: true, microsoftConfigured: isConfigured }));
+app.get('/api/health', (_req, res) => res.json({ ok: true, version: process.env.npm_package_version || '1.0.0', providersConfigured: { microsoftOAuth: isConfigured } }));
 app.get('/api/auth/status', (_req, res) => res.json({ ok: true, authenticated: Boolean(_req.session.accessToken && _req.session.tokenExpiresAt > Date.now()), configured: isConfigured }));
 app.get('/api/auth/login', requireConfigured, async (req, res, next) => {
   try { const state = crypto.randomBytes(32).toString('base64url'); const codeVerifier = crypto.randomBytes(32).toString('base64url'); const codeChallenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url'); req.session.oauthState = state; req.session.codeVerifier = codeVerifier; const url = await msal.getAuthCodeUrl({ scopes, redirectUri, state, codeChallenge, codeChallengeMethod: 'S256', prompt: 'select_account' }); res.redirect(url); } catch (error) { next(error); }
@@ -66,11 +67,11 @@ app.get('/api/auth/callback', requireConfigured, async (req, res, next) => {
   delete req.session.oauthState;
   const codeVerifier = req.session.codeVerifier; delete req.session.codeVerifier;
   if (!codeVerifier) return apiError(res, 400, 'OAUTH_VERIFIER_MISSING', 'Microsoft sign-in could not be completed. Return to the reader and try again.');
-  try { const result = await msal.acquireTokenByCode({ code, scopes, redirectUri, codeVerifier }); req.session.accessToken = result.accessToken; req.session.tokenExpiresAt = result.expiresOn?.getTime() || Date.now() + 50 * 60_000; req.session.save(() => res.redirect(`${APP_ORIGIN}/?microsoftConnected=1`)); } catch (cause) { next(cause); }
+  try { const result = await msal.acquireTokenByCode({ code, scopes, redirectUri, codeVerifier }); req.session.accessToken = result.accessToken; req.session.tokenExpiresAt = result.expiresOn?.getTime() || Date.now() + 50 * 60_000; req.session.save(() => res.redirect(`${config.appOrigin}/?microsoftConnected=1`)); } catch (cause) { next(cause); }
 });
 app.post('/api/auth/logout', (req, res, next) => req.session.destroy(error => {
   if (error) return next(error);
-  res.clearCookie('psr.sid', { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
+  res.clearCookie('psr.sid', { httpOnly: true, sameSite: process.env.NODE_ENV === 'production' || config.vercel ? 'none' : 'lax', secure: process.env.NODE_ENV === 'production' || config.vercel });
   return res.json({ ok: true });
 }));
 async function getSharedDocument(url, accessToken) {
@@ -81,12 +82,13 @@ async function getSharedDocument(url, accessToken) {
     if (!metadataResponse.ok) throw Object.assign(new Error('Microsoft could not open this sharing link.'), { status: 502 });
     const metadata = await readJsonResponse(metadataResponse, 'Microsoft returned an empty or invalid response for this sharing link. Check the link and try again.');
     if (!metadata.file || !/\.(txt|md|markdown|pdf|docx|epub)$/i.test(metadata.name || '')) throw Object.assign(new Error('Choose a TXT, Markdown, PDF, DOCX, or EPUB document.'), { status: 415 });
-    if (metadata.size > MAX_BYTES) throw Object.assign(new Error('This document is larger than the 40 MB limit.'), { status: 413 });
+    if (metadata.size > MAX_BYTES) throw Object.assign(new Error(`This document is larger than the ${MAX_MB} MB limit.`), { status: 413 });
     const contentResponse = await fetch(`https://graph.microsoft.com/v1.0/shares/${shareId}/driveItem/content`, { headers: { Authorization: `Bearer ${accessToken}` }, redirect: 'manual', signal: AbortSignal.timeout(15_000) });
     const location = contentResponse.headers.get('location');
     if (contentResponse.status !== 302 || !location) throw Object.assign(new Error('Microsoft did not provide an accessible download for this document.'), { status: 502 });
-    const bytes = await downloadPinned(location);
-    return { bytes, name: metadata.name };
+    const downloaded = await downloadPinned(location);
+    if (!readableDocumentType(downloaded.bytes, { name: metadata.name, ...downloaded })) throw Object.assign(new Error('Microsoft returned a sign-in page or a file that is not a supported readable document.'), { status: 415 });
+    return { bytes: downloaded.bytes, name: metadata.name };
 }
 function sendDocument(res, document) { res.setHeader('Content-Type', 'application/octet-stream'); res.setHeader('Content-Length', document.bytes.length); res.setHeader('X-Document-Name', encodeURIComponent(document.name)); res.send(document.bytes); }
 app.post('/api/documents/shared', async (req, res, next) => {
@@ -114,4 +116,9 @@ app.use((error, _req, res, _next) => {
   console.error(`request=${id} type=${error?.name || 'Error'}`);
   return res.status(status).json({ ok: false, error: { code, message }, requestId: id });
 });
-app.listen(PORT, '127.0.0.1', () => console.log(`Private Story Reader API listening on 127.0.0.1:${PORT}`));
+export default app;
+
+if (!config.vercel) {
+  logEnvironmentCheck();
+  app.listen(config.port, config.host, () => console.log(`Private Story Reader API listening on ${config.host}:${config.port}`));
+}

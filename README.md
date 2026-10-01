@@ -1,5 +1,7 @@
 # Private Story Reader
 
+[![License: AGPL v3 or later](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue.svg)](./LICENSE)
+
 A local first audiobook style reader for documents you already have permission to access. Upload a TXT, Markdown, PDF, DOCX, or EPUB file, read it in a comfortable chapter view, and listen with the speech voices available in your browser or operating system.
 
 ## What works in this build
@@ -17,7 +19,7 @@ A local first audiobook style reader for documents you already have permission t
 
 ## Microsoft links
 
-OneDrive and SharePoint retrieval uses the optional server side delegated OAuth/Graph integration in `server/index.mjs`. It needs a registered Entra application and environment secrets. If those values are absent, link retrieval returns a setup message; local file reading still works.
+OneDrive and SharePoint retrieval uses the optional server side delegated OAuth/Graph integration in `server/index.mjs`. Public anonymous link resolution is not implemented yet. If OAuth is not configured, link retrieval explains the setup requirement; local file reading still works. See [deployment instructions](./docs/DEPLOYMENT.md) for the Vercel API route and current limits.
 
 ## Run locally
 
@@ -67,4 +69,4 @@ Supported providers are `github-sponsors`, `ko-fi`, `buy-me-a-coffee`, `open-col
 
 ## License and launch readiness
 
-This repository does not yet contain a selected open-source license. The maintainer must choose one before accepting contributions or publishing a release; until then, do not assume the source is licensed for reuse. Privacy and legal materials are good-faith project documentation, not legal advice, and require review for the jurisdictions in which the hosted service will operate.
+This project is licensed under the GNU Affero General Public License, version 3 or later (AGPL-3.0-or-later); see [LICENSE](./LICENSE). Privacy and legal materials are good-faith templates, not legal advice, and should be reviewed by a qualified lawyer before a public hosted launch. License and privacy questions: navaneethkv.dev@gmail.com.

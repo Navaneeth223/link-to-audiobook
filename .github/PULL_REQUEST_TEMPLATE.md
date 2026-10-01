@@ -1,8 +1,15 @@
-## What changed
+## Summary
 
-## How was it verified?
+Describe the user problem and change.
 
-## Privacy or security impact
+## Privacy and security impact
 
-- [ ] This change does not add story text, sharing URLs, OAuth tokens, or voice recordings to logs or test fixtures.
-- [ ] User-visible behavior and accessibility were considered.
+Describe affected data, providers, permissions, and security behavior.
+
+## Verification
+
+- [ ] Typecheck
+- [ ] Unit tests
+- [ ] Build
+
+Commits must be signed off with `git commit -s` under the repository's DCO contribution instructions.

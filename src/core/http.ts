@@ -1,3 +1,13 @@
+const apiBase = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+
+export function apiUrl(path: string): string {
+  return `${apiBase}${path.startsWith('/') ? path : `/${path}`}`;
+}
+
+export function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+  return fetch(apiUrl(path), { credentials: 'include', ...init });
+}
+
 export async function responseErrorMessage(response: Response, fallback: string): Promise<string> {
   let body = '';
   try { body = await response.clone().text(); } catch { /* The response may have no readable body. */ }
@@ -13,6 +23,7 @@ export async function responseErrorMessage(response: Response, fallback: string)
   }
   if (response.status === 401) return 'Sign in with Microsoft to open this document.';
   if (response.status === 403) return 'You don’t currently have permission to read this document.';
-  if (response.status === 404 || response.status === 500 || response.status === 502 || response.status === 503) return 'The document service is unavailable. Check that the reader API is running and configured, then try again.';
+  if (response.status === 415) return 'This link does not point to a readable TXT, Markdown, PDF, DOCX, or EPUB document.';
+  if (response.status === 404 || response.status >= 500) return 'The reader API could not complete this request. Use Check status to see whether it is reachable.';
   return fallback;
 }
