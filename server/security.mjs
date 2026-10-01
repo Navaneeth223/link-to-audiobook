@@ -6,6 +6,15 @@ export function validShareUrl(value) {
   return url.protocol === 'https:' && !url.username && !url.password && !url.port && allowedShareHosts.some(domain => url.hostname === domain || url.hostname.endsWith(`.${domain}`));
 }
 export function graphShareId(url) { return `u!${Buffer.from(url, 'utf8').toString('base64url')}`; }
+export async function readJsonResponse(response, message = 'Microsoft returned an unreadable document response.') {
+  let body = '';
+  try { body = await response.text(); } catch { /* Surface a safe provider error below. */ }
+  try {
+    const value = JSON.parse(body);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid JSON shape');
+    return value;
+  } catch { throw Object.assign(new Error(message), { status: 502, publicMessage: message }); }
+}
 export function publicAddress(address) {
   if (net.isIPv4(address)) {
     const [a,b] = address.split('.').map(Number);

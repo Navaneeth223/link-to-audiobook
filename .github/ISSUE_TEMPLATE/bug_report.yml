@@ -1,0 +1,22 @@
+name: Bug report
+description: Report a reproducible reader problem
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Do not include private story text, sharing links, tokens, or voice recordings.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and device
+    validations:
+      required: true

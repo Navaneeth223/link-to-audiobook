@@ -4,7 +4,11 @@ export async function responseErrorMessage(response: Response, fallback: string)
   if (body.trim()) {
     try {
       const parsed: unknown = JSON.parse(body);
-      if (parsed && typeof parsed === 'object' && 'error' in parsed && typeof parsed.error === 'string' && parsed.error.trim()) return parsed.error;
+      if (parsed && typeof parsed === 'object' && 'error' in parsed) {
+        const error = parsed.error;
+        if (typeof error === 'string' && error.trim()) return error;
+        if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string' && error.message.trim()) return error.message;
+      }
     } catch { /* HTML and plain text error pages are handled below. */ }
   }
   if (response.status === 401) return 'Sign in with Microsoft to open this document.';
