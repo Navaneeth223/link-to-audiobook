@@ -55,14 +55,16 @@ function requireConfigured(req, res, next) { if (!msal) return res.status(503).j
 app.get('/api/health', (_req, res) => res.json({ ok: true, microsoftConfigured: isConfigured }));
 app.get('/api/auth/status', (_req, res) => res.json({ authenticated: Boolean(_req.session.accessToken && _req.session.tokenExpiresAt > Date.now()), configured: isConfigured }));
 app.get('/api/auth/login', requireConfigured, async (req, res, next) => {
-  try { const state = crypto.randomBytes(32).toString('base64url'); req.session.oauthState = state; const url = await msal.getAuthCodeUrl({ scopes, redirectUri, state, prompt: 'select_account' }); res.redirect(url); } catch (error) { next(error); }
+  try { const state = crypto.randomBytes(32).toString('base64url'); const codeVerifier = crypto.randomBytes(32).toString('base64url'); const codeChallenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url'); req.session.oauthState = state; req.session.codeVerifier = codeVerifier; const url = await msal.getAuthCodeUrl({ scopes, redirectUri, state, codeChallenge, codeChallengeMethod: 'S256', prompt: 'select_account' }); res.redirect(url); } catch (error) { next(error); }
 });
 app.get('/api/auth/callback', requireConfigured, async (req, res, next) => {
   const { code, state, error } = req.query;
   const expectedState = req.session.oauthState;
   if (error || typeof code !== 'string' || typeof state !== 'string' || !expectedState || Buffer.byteLength(state) !== Buffer.byteLength(expectedState) || !crypto.timingSafeEqual(Buffer.from(state), Buffer.from(expectedState))) return res.status(400).send('Microsoft sign-in could not be completed. Return to the reader and try again.');
   delete req.session.oauthState;
-  try { const result = await msal.acquireTokenByCode({ code, scopes, redirectUri }); req.session.accessToken = result.accessToken; req.session.tokenExpiresAt = result.expiresOn?.getTime() || Date.now() + 50 * 60_000; req.session.save(() => res.redirect(`${APP_ORIGIN}/?microsoftConnected=1`)); } catch (cause) { next(cause); }
+  const codeVerifier = req.session.codeVerifier; delete req.session.codeVerifier;
+  if (!codeVerifier) return res.status(400).send('Microsoft sign-in could not be completed. Return to the reader and try again.');
+  try { const result = await msal.acquireTokenByCode({ code, scopes, redirectUri, codeVerifier }); req.session.accessToken = result.accessToken; req.session.tokenExpiresAt = result.expiresOn?.getTime() || Date.now() + 50 * 60_000; req.session.save(() => res.redirect(`${APP_ORIGIN}/?microsoftConnected=1`)); } catch (cause) { next(cause); }
 });
 app.post('/api/auth/logout', (req, res) => req.session.destroy(() => { res.clearCookie('psr.sid', { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' }); res.json({ ok: true }); }));
 async function getSharedDocument(url, accessToken) {
@@ -89,7 +91,7 @@ app.post('/api/documents/shared', async (req, res, next) => {
   try { const document = await getSharedDocument(url, req.session.accessToken); delete req.session.pendingShareUrl; sendDocument(res, document); }
   catch (error) { if (error.status === 401) { delete req.session.accessToken; req.session.pendingShareUrl = url; } next(error); }
 });
-app.get('/api/documents/pending', async (req, res, next) => {
+app.post('/api/documents/pending', async (req, res, next) => {
   const url = req.session.pendingShareUrl;
   if (!url || !validShareUrl(url)) return res.status(404).json({ error: 'There is no pending document.' });
   if (!req.session.accessToken || req.session.tokenExpiresAt <= Date.now()) return res.status(401).json({ error: 'Sign in with Microsoft to open this document.' });

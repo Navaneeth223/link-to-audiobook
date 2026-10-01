@@ -10,6 +10,11 @@ export function normalizeText(raw: string): string {
 export function splitSentences(text: string): string[] {
   return text.match(/[^.!?…]+(?:[.!?…]+[”’'"”)]*)?|[.!?…]+/g)?.map(sentence => sentence.trim()).filter(Boolean) ?? (text.trim() ? [text.trim()] : []);
 }
+function checkArchiveLimits(zip: { files: Record<string, { dir: boolean; _data?: { uncompressedSize?: number } }> }): void {
+  const entries = Object.values(zip.files).filter(entry => !entry.dir);
+  const expandedBytes = entries.reduce((sum, entry) => sum + (entry._data?.uncompressedSize ?? 0), 0);
+  if (entries.length > 5000 || expandedBytes > 200 * 1024 * 1024 || entries.some(entry => (entry._data?.uncompressedSize ?? 0) > 40 * 1024 * 1024)) throw new Error('This compressed document expands beyond the safe reading limit.');
+}
 export function segmentStory(raw: string, title: string, sourceName: string): Story {
   const lines = normalizeText(raw).split('\n');
   const chapters: Chapter[] = [];
@@ -39,16 +44,21 @@ export async function extractFile(file: File): Promise<Story> {
     pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
     const data = new Uint8Array(await file.arrayBuffer());
     const doc = await pdfjs.getDocument({ data }).promise;
+    if (doc.numPages > 2000) throw new Error('This PDF contains too many pages to open safely.');
     const pages: string[] = [];
     for (let i = 1; i <= doc.numPages; i++) { const page = await doc.getPage(i); const content = await page.getTextContent(); pages.push(content.items.map(item => 'str' in item ? item.str : '').join(' ')); }
     text = pages.join('\n\n');
+    if (text.length > 10_000_000) throw new Error('This PDF contains too much extracted text to open safely.');
     if (!normalizeText(text)) throw new Error('This PDF appears to contain scanned pages. OCR is required to read it.');
   } else if (ext === 'docx') {
+    const { default: JSZip } = await import('jszip');
+    const docxZip = await JSZip.loadAsync(await file.arrayBuffer()); checkArchiveLimits(docxZip);
     const { default: mammoth } = await import('mammoth');
     const result = await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() }); text = result.value;
   } else if (ext === 'epub') {
     const { default: JSZip } = await import('jszip');
     const zip = await JSZip.loadAsync(await file.arrayBuffer());
+    checkArchiveLimits(zip);
     const container = zip.file('META-INF/container.xml'); if (!container) throw new Error('This EPUB file is missing its book index.');
     const xml = new DOMParser().parseFromString(await container.async('text'), 'application/xml');
     const opfPath = xml.querySelector('rootfile')?.getAttribute('full-path'); if (!opfPath) throw new Error('This EPUB file is missing its book index.');

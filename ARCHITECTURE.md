@@ -16,7 +16,7 @@ The link form and API validate HTTPS and an exact OneDrive/SharePoint domain suf
 
 ## Speech and playback
 
-The application uses the browser `SpeechSynthesis` API behind the UI's playback controls. This requires no API key and sends text to the browser's configured speech subsystem. It is a local fallback, not a neural speech service abstraction or prebuffered audio queue. Browser speech does not expose accurate word or time offsets. A server TTS provider should be added behind a `SpeechProvider` interface, produce bounded chunks, keep keys server side, apply explicit short lived cache retention, and provide cache cleanup.
+The application uses the browser `SpeechSynthesis` API behind the UI's playback controls and speaks one sentence at a time. This requires no API key and sends text to the browser's configured speech subsystem. It is a local fallback, not a neural speech service abstraction or prebuffered audio queue. Browser speech does not expose accurate word or time offsets. A server TTS provider should be added behind a `SpeechProvider` interface, produce bounded chunks, keep keys server side, apply explicit short lived cache retention, and provide cache cleanup.
 
 ## Persistence and cleanup
 

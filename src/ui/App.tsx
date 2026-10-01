@@ -29,7 +29,7 @@ export default function App() {
     if (params.get('microsoftConnected') !== '1') return;
     window.history.replaceState({}, '', window.location.pathname);
     setBusy(true);
-    void fetch('/api/documents/pending').then(async response => {
+    void fetch('/api/documents/pending', { method: 'POST' }).then(async response => {
       if (!response.ok) { const body = await response.json() as { error?: string }; throw new Error(body.error || 'We couldn’t open this shared document.'); }
       const name = decodeURIComponent(response.headers.get('X-Document-Name') || 'shared-story.txt');
       await onFile(new File([await response.blob()], name));
