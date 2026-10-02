@@ -14,8 +14,8 @@ describe('shared link API errors', () => {
     const empty = new Response(null, { status: 500 });
     const html = new Response('<!doctype html><title>Not found</title>', { status: 404, headers: { 'Content-Type': 'text/html' } });
     const malformed = new Response('{', { status: 500, headers: { 'Content-Type': 'application/json' } });
-    expect(await responseErrorMessage(empty, 'Could not open file.')).toContain('Check status');
-    expect(await responseErrorMessage(html, 'Could not open file.')).toContain('Check status');
-    expect(await responseErrorMessage(malformed, 'Could not open file.')).toContain('Check status');
+    expect(await responseErrorMessage(empty, 'Could not open file.')).toContain('HTTP 500');
+    expect(await responseErrorMessage(html, 'Could not open file.')).toContain('route was not found');
+    expect(await responseErrorMessage(malformed, 'Could not open file.')).toContain('HTTP 500');
   });
 });

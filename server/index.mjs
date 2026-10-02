@@ -8,6 +8,7 @@ import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import { ConfidentialClientApplication } from '@azure/msal-node';
 import { graphShareId, publicAddress, readableDocumentType, readJsonResponse, validShareUrl } from './security.mjs';
+import { fetchPublicDocument } from './publicDocument.mjs';
 import { config, logEnvironmentCheck } from './env.mjs';
 
 const app = express();
@@ -103,13 +104,23 @@ async function getSharedDocument(url, accessToken) {
     return { bytes: downloaded.bytes, name: metadata.name };
 }
 function sendDocument(res, document) { res.setHeader('Content-Type', 'application/octet-stream'); res.setHeader('Content-Length', document.bytes.length); res.setHeader('X-Document-Name', encodeURIComponent(document.name)); res.send(document.bytes); }
-app.post('/api/documents/shared', async (req, res, next) => {
-  const { url } = req.body || {};
+async function openSharedDocument(req, res, next, url) {
   if (!validShareUrl(url)) return apiError(res, 400, 'SHARE_URL_INVALID', 'Paste an HTTPS OneDrive or SharePoint sharing link.');
+  let parsed;
+  try { parsed = new URL(url); } catch { return apiError(res, 400, 'SHARE_URL_INVALID', 'Paste an HTTPS OneDrive or SharePoint sharing link.'); }
+  if (parsed.hostname === 'onedrive.live.com' && parsed.pathname === '/' && !parsed.search) return apiError(res, 400, 'ONEDRIVE_LINK_INVALID', 'That is the OneDrive homepage. Open the document, choose “Copy link,” then paste its sharing link here.');
   if (!isConfigured) return apiError(res, 503, 'MICROSOFT_NOT_CONFIGURED', 'Microsoft sign-in is not configured on this server.');
   if (!req.session.accessToken || req.session.tokenExpiresAt <= Date.now()) { req.session.pendingShareUrl = url; return apiError(res, 401, 'SIGN_IN_REQUIRED', 'Sign in with Microsoft to open this document.'); }
   try { const document = await getSharedDocument(url, req.session.accessToken); delete req.session.pendingShareUrl; sendDocument(res, document); }
   catch (error) { if (error.status === 401) { delete req.session.accessToken; req.session.pendingShareUrl = url; } next(error); }
+}
+app.post('/api/documents/shared', (req, res, next) => openSharedDocument(req, res, next, req.body?.url));
+app.post('/api/documents/import', async (req, res, next) => {
+  const { url } = req.body || {};
+  if (typeof url !== 'string' || url.length > 4096) return apiError(res, 400, 'URL_INVALID', 'Enter a valid document URL.');
+  if (validShareUrl(url)) return openSharedDocument(req, res, next, url);
+  try { sendDocument(res, await fetchPublicDocument(url, MAX_BYTES)); }
+  catch (error) { next(error); }
 });
 app.post('/api/documents/pending', async (req, res, next) => {
   const url = req.session.pendingShareUrl;
@@ -123,7 +134,7 @@ app.use((error, _req, res, _next) => {
   if (res.headersSent) return res.end();
   const id = crypto.randomUUID();
   const status = Number.isInteger(error?.status) && error.status >= 400 && error.status < 600 ? error.status : 500;
-  const code = error?.type === 'entity.parse.failed' ? 'INVALID_JSON' : status === 413 ? 'REQUEST_TOO_LARGE' : status === 400 ? 'BAD_REQUEST' : status >= 500 ? 'DOCUMENT_REQUEST_FAILED' : 'REQUEST_FAILED';
+  const code = error?.publicCode || (error?.type === 'entity.parse.failed' ? 'INVALID_JSON' : status === 413 ? 'REQUEST_TOO_LARGE' : status === 400 ? 'BAD_REQUEST' : status >= 500 ? 'DOCUMENT_REQUEST_FAILED' : 'REQUEST_FAILED');
   const message = error?.publicMessage || (error?.type === 'entity.parse.failed' ? 'Request body must contain valid JSON.' : status === 413 ? 'This request is too large.' : status < 500 ? (error?.message || 'The request could not be completed.') : 'The document request failed. Please try again.');
   console.error(`request=${id} type=${error?.name || 'Error'}`);
   return res.status(status).json({ ok: false, error: { code, message }, requestId: id });

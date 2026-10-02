@@ -420,17 +420,12 @@ export default function App() {
     setError('');
     try {
       const url = new URL(link);
-      if (
-        url.protocol !== 'https:' ||
-        !['1drv.ms', 'onedrive.live.com', 'sharepoint.com'].some(
-          (host) => url.hostname === host || url.hostname.endsWith(`.${host}`),
-        )
-      )
-        throw new Error('Paste an HTTPS OneDrive or SharePoint sharing link.');
+      if (!['https:', 'http:'].includes(url.protocol))
+        throw new Error('Paste a public HTTP or HTTPS document link, or a OneDrive or SharePoint sharing link.');
       if (url.hostname === 'onedrive.live.com' && url.pathname === '/' && !url.search)
         throw new Error('That is the OneDrive homepage. Open the document, choose “Copy link,” then paste its sharing link here.');
       setBusy(true);
-      const response = await apiFetch('/api/documents/shared', {
+      const response = await apiFetch('/api/documents/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: url.href }),
@@ -809,7 +804,7 @@ export default function App() {
                     id="story-link"
                     value={link}
                     onChange={(e) => setLink(e.target.value)}
-                    placeholder="Paste a OneDrive or SharePoint link"
+                    placeholder="Paste a public document or OneDrive link"
                   />
                   <button type="submit" disabled={!link.trim() || busy} aria-label="Open story from link">
                     <ChevronRight size={20} />

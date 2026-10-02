@@ -24,6 +24,7 @@ export async function responseErrorMessage(response: Response, fallback: string)
   if (response.status === 401) return 'Sign in with Microsoft to open this document.';
   if (response.status === 403) return 'You don’t currently have permission to read this document.';
   if (response.status === 415) return 'This link does not point to a readable TXT, Markdown, PDF, DOCX, or EPUB document.';
-  if (response.status === 404 || response.status >= 500) return 'The reader API could not complete this request. Use Check status to see whether it is reachable.';
+  if (response.status === 404) return 'The requested reader API route was not found.';
+  if (response.status >= 500) return `The reader API returned HTTP ${response.status}. Check the API server output for the cause.`;
   return fallback;
 }
