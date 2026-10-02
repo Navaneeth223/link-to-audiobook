@@ -26,7 +26,7 @@ Audit date: 2026-10-02. Status is based on the tracked source and current packag
 | Configurable donation links | DONE | `src/core/donationLinks.ts`, `src/core/donationLinks.test.ts`. |
 | Privacy/policy pages and device data controls | PARTIAL | `docs/*.md`, `src/ui/LegalDialog.tsx`, `src/core/privacyData.ts`; all data stores and result verification need production review. |
 | 31 unit tests | PARTIAL | `npm test` exists; count may have changed. |
-| Lint, Playwright, tablet visual tests | MISSING | No lint/e2e/visual scripts or Playwright dependency in `package.json`. |
+| Lint, Playwright, tablet visual tests | PARTIAL | Phase 2 now provides lint/e2e/visual commands and viewport coverage; Chromium smoke and axe tests exist, while visual baselines and full reader flows remain absent. |
 | Neural TTS, Voice Studio, voice donation | MISSING | No corresponding provider or UI modules. |
 | Theme coverage, custom scrollbars and controls | PARTIAL | `src/ui/styles.css`; High Contrast/System themes and full component audit absent. |
 | Browse Voices | MISSING | No voice browser dialog in `src/ui`. |
@@ -54,12 +54,14 @@ Audit date: 2026-10-02. Status is based on the tracked source and current packag
 
 | Requirement | Status | Evidence |
 |---|---|---|
-| ESLint flat config, Prettier, lint/format/typecheck/check scripts | MISSING | `package.json`; no lint config. |
-| Playwright Chromium/WebKit/Firefox and viewport profiles | MISSING | `package.json`; no Playwright config/tests. |
-| Visual regression and geometry assertions | MISSING | No visual/e2e tests. |
-| axe checks | MISSING | No axe dependency or tests. |
-| GitHub Actions PR workflow | MISSING | `.github/` has no workflow. |
-| Full document/playback/privacy E2E flows | MISSING | No browser tests. |
+| ESLint flat config, Prettier, lint/format/typecheck/check scripts | DONE | `eslint.config.js`, `.prettierrc.json`, `package.json`; existing legacy warnings are listed below. |
+| Playwright Chromium/WebKit/Firefox and viewport profiles | PARTIAL | `playwright.config.ts`, `tests/e2e/`; Chromium viewport projects run by default and cross-browser projects are opt-in. Firefox installation hit local disk exhaustion. |
+| Visual regression and geometry assertions | PARTIAL | `tests/e2e/visual.spec.ts` verifies non-empty rendered screenshots; image-baseline visual regression is not yet configured. |
+| axe checks | DONE | `tests/e2e/smoke.spec.ts` runs axe against the landing page. |
+| GitHub Actions PR workflow | DONE | `.github/workflows/ci.yml` runs checks, build and browser E2E. |
+| Full document/playback/privacy E2E flows | PARTIAL | `tests/e2e/smoke.spec.ts` covers a local multi-chapter TXT import; playback and privacy E2E remain absent. |
+
+The lint gate currently reports legacy findings in `src/core/document.ts` (intentional control-character filtering) and `src/ui/App.tsx` / `src/ui/LegalDialog.tsx` (state update in the Microsoft callback effect, drag/drop-only targets with an equivalent file-picker control, and a backdrop click handler alongside the dialog's close button). They remain non-blocking warnings. React Hook dependency warnings in the existing reader effects are also pre-existing; new code must not add lint warnings.
 
 ## Phase 3 — UI/UX
 
