@@ -3,36 +3,72 @@ import { clampVolume, type PcmAudio, type SampleSpeechProvider } from './speech'
 export const PIPER_VOICE = {
   id: 'en_US-libritts-high',
   name: 'LibriTTS · p3922',
+  tier: 'high quality',
   language: 'English (United States)',
   sampleRate: 22_050,
   modelBytes: 136_673_811,
   configBytes: 20_163,
+  path: 'en/en_US/libritts/high/en_US-libritts-high',
   license: 'MIT (Piper voice repository metadata)',
   datasetLicense: 'CC BY 4.0 (LibriTTS)',
 } as const;
+
+export const PIPER_FAST_VOICE = {
+  id: 'en_US-libritts_r-medium',
+  name: 'LibriTTS-R · Medium',
+  tier: 'fast',
+  language: 'English (United States)',
+  sampleRate: 22_050,
+  modelBytes: 78_580_914,
+  configBytes: 20_123,
+  path: 'en/en_US/libritts_r/medium/en_US-libritts_r-medium',
+  license: 'MIT (Piper voice repository metadata)',
+  datasetLicense: 'CC BY 4.0 (LibriTTS-R)',
+} as const;
+
+export const DOWNLOADABLE_PIPER_VOICES = [PIPER_VOICE, PIPER_FAST_VOICE] as const;
+export type PiperVoice = (typeof DOWNLOADABLE_PIPER_VOICES)[number];
+export type PiperVoiceId = PiperVoice['id'];
+
+export function getPiperVoice(voiceId: string): PiperVoice | undefined {
+  return DOWNLOADABLE_PIPER_VOICES.find((voice) => voice.id === voiceId);
+}
 
 export const PIPER_MODEL_COMMIT = '375a0fe641dea077c2a47b4e9a056d6da521eed3';
 export const PIPER_ONNX_VERSION = '1.30.0';
 export const PIPER_PHONEMIZER_VERSION = '1.0.0';
 export const PIPER_STORAGE_DIRECTORY = 'piper';
-const PIPER_MODEL_MARKER = '.psr-libritts-high.commit';
 
-const modelMirrorPath = '/diffusionstudio/piper-voices/resolve/main/en/en_US/libritts/high/';
-const modelPinnedPrefix = `https://huggingface.co/rhasspy/piper-voices/resolve/${PIPER_MODEL_COMMIT}/en/en_US/libritts/high/`;
-const modelFiles = new Set(['en_US-libritts-high.onnx', 'en_US-libritts-high.onnx.json']);
+const modelPinnedPrefix = `https://huggingface.co/rhasspy/piper-voices/resolve/${PIPER_MODEL_COMMIT}/`;
+const voiceModelMarkers: Record<PiperVoiceId, string> = {
+  [PIPER_VOICE.id]: '.psr-libritts-high.commit',
+  [PIPER_FAST_VOICE.id]: '.psr-libritts-r-medium.commit',
+};
 
-export async function isPiperVoiceInstalled(): Promise<boolean> {
+function voiceModelFiles(voice: PiperVoice): Array<{ name: string; bytes: number }> {
+  const prefix = voice.path.split('/').at(-1);
+  if (!prefix) throw new Error('The selected downloadable voice has an invalid model path.');
+  return [
+    { name: `${prefix}.onnx`, bytes: voice.modelBytes },
+    { name: `${prefix}.onnx.json`, bytes: voice.configBytes },
+  ];
+}
+
+export async function isPiperVoiceInstalled(voiceId: PiperVoiceId = PIPER_VOICE.id): Promise<boolean> {
   if (typeof navigator.storage?.getDirectory !== 'function') return false;
+  const voice = getPiperVoice(voiceId);
+  if (!voice) throw new Error('The selected downloadable voice is not available.');
+  const [modelFile, configFile] = voiceModelFiles(voice);
   try {
     const root = await navigator.storage.getDirectory();
     const directory = await root.getDirectoryHandle(PIPER_STORAGE_DIRECTORY);
-    const marker = await directory.getFileHandle(PIPER_MODEL_MARKER);
+    const marker = await directory.getFileHandle(voiceModelMarkers[voice.id]);
     if ((await (await marker.getFile()).text()).trim() !== PIPER_MODEL_COMMIT) return false;
-    const model = await directory.getFileHandle('en_US-libritts-high.onnx');
-    const config = await directory.getFileHandle('en_US-libritts-high.onnx.json');
+    const model = await directory.getFileHandle(modelFile.name);
+    const config = await directory.getFileHandle(configFile.name);
     return (
-      (await model.getFile()).size === PIPER_VOICE.modelBytes &&
-      (await config.getFile()).size === PIPER_VOICE.configBytes
+      (await model.getFile()).size === voice.modelBytes &&
+      (await config.getFile()).size === voice.configBytes
     );
   } catch (error) {
     if (error instanceof DOMException && error.name === 'NotFoundError') return false;
@@ -48,9 +84,16 @@ export function pinnedPiperModelUrl(input: string | URL): string | undefined {
     return undefined;
   }
   if (url.origin !== 'https://huggingface.co' || url.search || url.hash) return undefined;
-  if (!url.pathname.startsWith(modelMirrorPath)) return undefined;
-  const fileName = url.pathname.slice(modelMirrorPath.length);
-  return modelFiles.has(fileName) ? `${modelPinnedPrefix}${fileName}` : undefined;
+  const mirrorPrefix = '/diffusionstudio/piper-voices/resolve/main/';
+  if (!url.pathname.startsWith(mirrorPrefix)) return undefined;
+  const modelPath = url.pathname.slice(mirrorPrefix.length);
+  for (const voice of DOWNLOADABLE_PIPER_VOICES) {
+    const files = voiceModelFiles(voice);
+    if (files.some((file) => file.name === modelPath.split('/').at(-1)) && modelPath.startsWith(voice.path)) {
+      return `${modelPinnedPrefix}${modelPath}`;
+    }
+  }
+  return undefined;
 }
 
 export function decodePiperWav(buffer: ArrayBuffer): PcmAudio {
@@ -118,6 +161,22 @@ export function piperLengthScale(baseLengthScale: number, speed: number): number
   return baseLengthScale / speed;
 }
 
+export function piperWasmThreadCount(crossOriginIsolated: boolean, hardwareConcurrency: number): number {
+  if (!crossOriginIsolated) return 1;
+  if (!Number.isFinite(hardwareConcurrency)) return 1;
+  return Math.max(1, Math.min(4, Math.floor(hardwareConcurrency)));
+}
+
+export function piperWorkerThreadCount(
+  crossOriginIsolated: boolean,
+  hardwareConcurrency: number,
+  workerCount: number,
+): number {
+  if (!crossOriginIsolated || !Number.isFinite(workerCount) || workerCount < 1) return 1;
+  const totalThreadBudget = Math.min(8, Math.max(1, Math.floor(hardwareConcurrency)));
+  return Math.max(1, Math.min(4, Math.floor(totalThreadBudget / workerCount)));
+}
+
 const piperLigatures: Record<string, string> = {
   '\u00c6': 'AE',
   '\u00e6': 'ae',
@@ -164,10 +223,24 @@ export function filterPiperPhonemeIds(
 }
 
 export type PiperWorkerCommand =
-  | { type: 'status' }
-  | { type: 'download' }
-  | { type: 'remove' }
-  | { type: 'synthesize'; text: string; speed: number };
+  | { type: 'status'; voiceId: PiperVoiceId }
+  | { type: 'download'; voiceId: PiperVoiceId }
+  | { type: 'remove'; voiceId?: PiperVoiceId }
+  | {
+      type: 'prepare';
+      speed: number;
+      executionMode: PiperExecutionMode;
+      threadLimit: number;
+      voiceId: PiperVoiceId;
+    }
+  | {
+      type: 'synthesize';
+      text: string;
+      speed: number;
+      executionMode: PiperExecutionMode;
+      threadLimit: number;
+      voiceId: PiperVoiceId;
+    };
 
 export type PiperWorkerRequest =
   | (PiperWorkerCommand & { requestId: number })
@@ -176,9 +249,17 @@ export type PiperWorkerRequest =
 export type PiperWorkerResponse =
   | { requestId: number; type: 'progress'; loaded: number; total: number }
   | { requestId: number; type: 'status'; installed: boolean }
-  | { requestId: number; type: 'audio'; audio: PcmAudio }
+  | {
+      requestId: number;
+      type: 'audio';
+      audio: PcmAudio;
+      backend: 'cpu' | 'gpu';
+      fallbackReason?: string;
+    }
   | { requestId: number; type: 'done' }
   | { requestId: number; type: 'error'; message: string };
+
+export type PiperExecutionMode = 'auto' | 'cpu' | 'gpu';
 
 export interface PiperWorkerPort {
   onmessage: ((event: MessageEvent<PiperWorkerResponse>) => void) | null;
@@ -196,6 +277,11 @@ type PendingRequest = {
 export class PiperSpeechProvider implements SampleSpeechProvider {
   private volume = 1;
   private speed = 1;
+  private executionMode: PiperExecutionMode = 'auto';
+  private lastBackend: 'cpu' | 'gpu' = 'cpu';
+  private lastFallbackReason = '';
+  private threadLimit = 1;
+  private voiceId: PiperVoiceId = PIPER_VOICE.id;
   private nextRequestId = 1;
   private readonly pending = new Map<number, PendingRequest>();
   private readonly workerFactory: () => PiperWorkerPort;
@@ -233,22 +319,62 @@ export class PiperSpeechProvider implements SampleSpeechProvider {
     this.speed = Number.isFinite(value) ? Math.min(2, Math.max(0.5, value)) : 1;
   }
 
+  setExecutionMode(mode: PiperExecutionMode): void {
+    this.executionMode = mode;
+  }
+
+  setThreadLimit(value: number): void {
+    this.threadLimit = Number.isFinite(value) ? Math.max(1, Math.min(4, Math.floor(value))) : 1;
+  }
+
+  setVoiceId(voiceId: PiperVoiceId): void {
+    if (!getPiperVoice(voiceId)) throw new Error('The selected downloadable voice is not available.');
+    this.voiceId = voiceId;
+  }
+
+  getExecutionReport(): { backend: 'cpu' | 'gpu'; fallbackReason: string } {
+    return { backend: this.lastBackend, fallbackReason: this.lastFallbackReason };
+  }
+
   async isVoiceInstalled(): Promise<boolean> {
-    const response = await this.request({ type: 'status' });
+    const response = await this.request({ type: 'status', voiceId: this.voiceId });
     if (response.type !== 'status') throw new Error('Could not check the downloadable voice status.');
     return response.installed;
   }
 
   async downloadVoice(onProgress?: (loaded: number, total: number) => void): Promise<void> {
-    const response = await this.request({ type: 'download' }, onProgress);
+    const response = await this.request({ type: 'download', voiceId: this.voiceId }, onProgress);
     if (response.type !== 'done') throw new Error('The downloadable voice could not be installed.');
+  }
+
+  async prepare(): Promise<void> {
+    const response = await this.request({
+      type: 'prepare',
+      speed: this.speed,
+      executionMode: this.executionMode,
+      threadLimit: this.threadLimit,
+      voiceId: this.voiceId,
+    });
+    if (response.type !== 'done') throw new Error('The downloadable voice engine could not be prepared.');
   }
 
   async synthesize(text: string, onProgress?: (loaded: number, total: number) => void): Promise<PcmAudio> {
     if (!text.trim()) throw new Error('There is no text to synthesize.');
-    const response = await this.request({ type: 'synthesize', text, speed: this.speed }, onProgress);
+    const response = await this.request(
+      {
+        type: 'synthesize',
+        text,
+        speed: this.speed,
+        executionMode: this.executionMode,
+        threadLimit: this.threadLimit,
+        voiceId: this.voiceId,
+      },
+      onProgress,
+    );
     if (response.type !== 'audio')
       throw new Error('The downloadable voice could not synthesize this passage.');
+    this.lastBackend = response.backend;
+    this.lastFallbackReason = response.fallbackReason ?? '';
     const samples = response.audio.samples;
     if (this.volume !== 1) {
       for (let index = 0; index < samples.length; index++) samples[index] *= this.volume;
@@ -256,8 +382,8 @@ export class PiperSpeechProvider implements SampleSpeechProvider {
     return response.audio;
   }
 
-  async removeVoice(): Promise<void> {
-    const response = await this.request({ type: 'remove' });
+  async removeVoice(voiceId?: PiperVoiceId): Promise<void> {
+    const response = await this.request({ type: 'remove', ...(voiceId ? { voiceId } : {}) });
     if (response.type !== 'done') throw new Error('The downloadable voice could not be removed.');
     this.worker.terminate();
     this.worker = this.createWorker();

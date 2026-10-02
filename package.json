@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "predev": "node scripts/copy-onnxruntime.mjs",
     "dev": "vite",
     "api": "node server/index.mjs",
     "typecheck": "tsc -b",
@@ -12,7 +13,9 @@
     "check": "npm run typecheck && npm run lint && npm test",
     "test:e2e": "npm run build && playwright test",
     "test:visual": "npm run build && playwright test --grep @visual",
+    "prebuild": "node scripts/copy-onnxruntime.mjs",
     "build": "tsc -b && vite build",
+    "prepreview": "node scripts/copy-onnxruntime.mjs",
     "test": "vitest run",
     "preview": "vite preview"
   },

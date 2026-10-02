@@ -1,10 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   piperLengthScale,
+  piperWorkerThreadCount,
+  piperWasmThreadCount,
   decodePiperWav,
   pinnedPiperModelUrl,
   filterPiperPhonemeIds,
   PiperSpeechProvider,
+  PIPER_FAST_VOICE,
   PIPER_VOICE,
   sanitizeSpeechInput,
   type PiperWorkerPort,
@@ -73,6 +76,13 @@ describe('Piper speech engine', () => {
         'https://huggingface.co/diffusionstudio/piper-voices/resolve/main/en/en_US/libritts/high/en_US-libritts-high.onnx?text=story',
       ),
     ).toBeUndefined();
+    expect(
+      pinnedPiperModelUrl(
+        'https://huggingface.co/diffusionstudio/piper-voices/resolve/main/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx',
+      ),
+    ).toBe(
+      'https://huggingface.co/rhasspy/piper-voices/resolve/375a0fe641dea077c2a47b4e9a056d6da521eed3/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx',
+    );
   });
 
   it('decodes Piper 16-bit mono WAV output to normalized float PCM', () => {
@@ -94,6 +104,9 @@ describe('Piper speech engine', () => {
     expect(PIPER_VOICE.id).toBe('en_US-libritts-high');
     expect(PIPER_VOICE.modelBytes).toBe(136_673_811);
     expect(PIPER_VOICE.datasetLicense).toBe('CC BY 4.0 (LibriTTS)');
+    expect(PIPER_FAST_VOICE.id).toBe('en_US-libritts_r-medium');
+    expect(PIPER_FAST_VOICE.modelBytes).toBe(78_580_914);
+    expect(PIPER_FAST_VOICE.datasetLicense).toBe('CC BY 4.0 (LibriTTS-R)');
   });
 
   it('maps the selected speed to Piper length scale without resampling its pitch', () => {
@@ -101,6 +114,19 @@ describe('Piper speech engine', () => {
     expect(piperLengthScale(1.05, 0.5)).toBe(2.1);
     expect(piperLengthScale(1.05, 1)).toBe(1.05);
     expect(() => piperLengthScale(1.05, 3)).toThrow(/speed/u);
+  });
+
+  it('enables capped ONNX Runtime threads only in an isolated browser context', () => {
+    expect(piperWasmThreadCount(false, 12)).toBe(1);
+    expect(piperWasmThreadCount(true, 12)).toBe(4);
+    expect(piperWasmThreadCount(true, 2)).toBe(2);
+    expect(piperWasmThreadCount(true, Number.NaN)).toBe(1);
+  });
+
+  it('shares a capped WASM thread budget across synthesis workers', () => {
+    expect(piperWorkerThreadCount(true, 12, 4)).toBe(2);
+    expect(piperWorkerThreadCount(true, 4, 2)).toBe(2);
+    expect(piperWorkerThreadCount(false, 12, 4)).toBe(1);
   });
 
   it('sanitizes speech-only Unicode/PDF artifacts while preserving spoken text', () => {
@@ -124,17 +150,25 @@ describe('Piper speech engine', () => {
     const worker = new MockPiperWorker();
     const provider = new PiperSpeechProvider(() => worker);
     provider.setVolume(0.5);
+    provider.setExecutionMode('cpu');
     const onProgress = vi.fn();
     const resultPromise = provider.synthesize('A private passage.', onProgress);
     const request = worker.requests[0];
-    expect(request).toMatchObject({ type: 'synthesize', text: 'A private passage.' });
+    expect(request).toMatchObject({
+      type: 'synthesize',
+      text: 'A private passage.',
+      executionMode: 'cpu',
+      threadLimit: 1,
+    });
     if (request.type !== 'synthesize') throw new Error('Expected a synthesis request.');
     worker.respond({ requestId: request.requestId, type: 'progress', loaded: 2, total: 4 });
     worker.respond({
       requestId: request.requestId,
       type: 'audio',
       audio: { samples: new Float32Array([0.8]), sampleRate: 22_050, channels: 1 },
+      backend: 'cpu',
     });
+    expect(provider.getExecutionReport()).toEqual({ backend: 'cpu', fallbackReason: '' });
     await expect(resultPromise).resolves.toEqual({
       samples: new Float32Array([0.4]),
       sampleRate: 22_050,

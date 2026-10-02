@@ -50,7 +50,12 @@ import { firstDroppedFile, hasFileDrag } from '../core/uploads';
 import { AudiobookExportDialog } from './AudiobookExportDialog';
 import { cancelRegisteredExport, clearRegisteredGeneratedAudio } from '../core/audioExportRegistry';
 import { AudioExportStore, type AudioExportManifest } from '../core/audioExportStore';
-import { isPiperVoiceInstalled, PiperSpeechProvider } from '../core/piper';
+import {
+  DOWNLOADABLE_PIPER_VOICES,
+  isPiperVoiceInstalled,
+  PiperSpeechProvider,
+} from '../core/piper';
+import type { PiperVoice, PiperVoiceId } from '../core/piper';
 
 const speeds = [0.5, 0.75, 1, 1.1, 1.25, 1.5, 1.75, 2];
 type BookmarkEntry = StoredBookmark & { chapterIndex: number; paragraphIndex: number };
@@ -109,7 +114,7 @@ export default function App() {
   const [privacyDataOpen, setPrivacyDataOpen] = useState(false);
   const [storedItems, setStoredItems] = useState<StoredItem[]>([]);
   const [storedExports, setStoredExports] = useState<AudioExportManifest[]>([]);
-  const [downloadedVoicePresent, setDownloadedVoicePresent] = useState(false);
+  const [downloadedVoices, setDownloadedVoices] = useState<PiperVoice[]>([]);
   const [storageDataError, setStorageDataError] = useState('');
   const [clearReport, setClearReport] = useState('');
   const [bookmarks, setBookmarks] = useState<BookmarkEntry[]>([]);
@@ -551,7 +556,7 @@ export default function App() {
   function openPrivacyData() {
     setStoredItems(listStoredItems());
     setStoredExports([]);
-    setDownloadedVoicePresent(false);
+    setDownloadedVoices([]);
     setStorageDataError('');
     setClearReport('');
     setPrivacyDataOpen(true);
@@ -559,8 +564,10 @@ export default function App() {
       .listManifests()
       .then(setStoredExports)
       .catch(() => setStorageDataError('The browser could not list stored audiobook export data.'));
-    void isPiperVoiceInstalled()
-      .then(setDownloadedVoicePresent)
+    void Promise.all(
+      DOWNLOADABLE_PIPER_VOICES.map(async (voice) => (await isPiperVoiceInstalled(voice.id) ? voice : null)),
+    )
+      .then((voices) => setDownloadedVoices(voices.filter((voice): voice is PiperVoice => voice !== null)))
       .catch(() => setStorageDataError('The browser could not inspect downloaded voice data.'));
   }
   function removeStoredItem(item: StoredItem) {
@@ -593,18 +600,24 @@ export default function App() {
       clearRegisteredGeneratedAudio();
       setStoredExports([]);
       setClearReport(
-        'Generated audio and resumable export data were removed. The downloaded voice model remains.',
+        'Generated audio and resumable export data were removed. Downloaded voice models remain.',
       );
     } catch {
       setClearReport('Some generated audio could not be removed. Use Clear everything to try again.');
     }
   }
-  async function removeDownloadedVoice() {
+  async function removeDownloadedVoice(voiceId?: PiperVoiceId) {
     const provider = new PiperSpeechProvider();
     try {
-      await provider.removeVoice();
-      setDownloadedVoicePresent(false);
-      setClearReport('The downloaded audiobook voice model was removed from this browser.');
+      await provider.removeVoice(voiceId);
+      setDownloadedVoices((voices) =>
+        voiceId ? voices.filter((voice) => voice.id !== voiceId) : [],
+      );
+      setClearReport(
+        voiceId
+          ? 'The selected audiobook voice model was removed from this browser.'
+          : 'All downloaded audiobook voice models were removed from this browser.',
+      );
     } catch {
       setClearReport('The downloaded voice model could not be removed. Use Clear everything to try again.');
     } finally {
@@ -638,7 +651,7 @@ export default function App() {
     setQuery('');
     setStoredItems(listStoredItems());
     setStoredExports([]);
-    setDownloadedVoicePresent(false);
+    setDownloadedVoices([]);
     const statuses = [
       result.localStorageCleared
         ? 'local preferences and locators cleared'
@@ -1623,21 +1636,26 @@ export default function App() {
             ) : (
               <p className="stored-empty">No generated audio or resumable exports are listed.</p>
             )}
-            {downloadedVoicePresent && (
+            {downloadedVoices.length > 0 && (
               <ul className="stored-items">
-                <li>
-                  <span>
-                    <strong>Downloaded Piper voice model</strong>
-                    <small>About 137 MB · stored locally for audiobook generation</small>
-                  </span>
-                  <button
-                    className="bookmark-action"
-                    onClick={() => void removeDownloadedVoice()}
-                    aria-label="Remove downloaded audiobook voice model"
-                  >
-                    Remove
-                  </button>
-                </li>
+                {downloadedVoices.map((voice) => (
+                  <li key={voice.id}>
+                    <span>
+                      <strong>{voice.name} voice model</strong>
+                      <small>
+                        About {Math.ceil(voice.modelBytes / 1_000_000)} MB · stored locally for audiobook
+                        generation
+                      </small>
+                    </span>
+                    <button
+                      className="bookmark-action"
+                      onClick={() => void removeDownloadedVoice(voice.id)}
+                      aria-label={`Remove downloaded ${voice.name} voice model`}
+                    >
+                      Remove
+                    </button>
+                  </li>
+                ))}
               </ul>
             )}
             {storageDataError && (

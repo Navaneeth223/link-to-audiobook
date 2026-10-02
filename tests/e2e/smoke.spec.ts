@@ -14,7 +14,10 @@ test('home loads, scans accessibly, and opens a local chaptered text file withou
     await route.continue();
   });
 
-  await page.goto('/');
+  const response = await page.goto('/');
+  expect(response?.headers()['cross-origin-opener-policy']).toBe('same-origin');
+  expect(response?.headers()['cross-origin-embedder-policy']).toBe('credentialless');
+  expect(await page.evaluate(() => crossOriginIsolated)).toBe(true);
   await expect(page).toHaveTitle('Private Story Reader');
 
   const homeAccessibility = await new AxeBuilder({ page }).analyze();
@@ -56,6 +59,8 @@ test('audiobook dialog explains that browser speech is not downloadable', async 
     'disabled',
     '',
   );
+  await expect(dialog.getByRole('option', { name: /Fast · LibriTTS-R · Medium · 79 MB/u })).toBeAttached();
+  await expect(dialog.getByRole('option', { name: /High quality · LibriTTS · p3922 · 137 MB/u })).toBeAttached();
   await expect(dialog.getByRole('button', { name: 'Start export' })).toBeDisabled();
 
   await dialog.getByRole('button', { name: 'Switch to a downloadable voice' }).click();

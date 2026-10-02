@@ -8,6 +8,8 @@ import {
   createWavInfoChunk,
   estimateAudioSeconds,
   estimateExportBytes,
+  estimateRollingEtaSeconds,
+  recommendedSynthesisWorkers,
   fadePcmBoundaries,
   normalizePcm,
   resamplePcm,
@@ -28,12 +30,20 @@ import {
 } from './audioExportStore';
 import { documentFingerprint } from './bookmarks';
 import { type Chapter, type Story } from './document';
-import { PIPER_MODEL_COMMIT, PIPER_VOICE, PiperSpeechProvider } from './piper';
+import {
+  getPiperVoice,
+  PIPER_MODEL_COMMIT,
+  PiperSpeechProvider,
+  piperWorkerThreadCount,
+  type PiperVoice,
+  type PiperVoiceId,
+} from './piper';
 import type { PcmAudio } from './speech';
 
 type StartMessage = {
   type: 'start';
   story: Story;
+  voiceId: PiperVoiceId;
   settings: AudioExportSettings;
   metadata: ExportMetadata;
   saveHandle?: FileSystemFileHandle;
@@ -73,8 +83,9 @@ type WorkerResponse =
 type ActiveJob = {
   cancelled: boolean;
   paused: boolean;
-  provider?: PiperSpeechProvider;
+  providers?: PiperSpeechProvider[];
   startedAt: number;
+  recentChunkDurationsMs: number[];
   manifest?: AudioExportManifest;
 };
 
@@ -137,9 +148,12 @@ function postProgress(
   const elapsedMs = performance.now() - job.startedAt;
   const percent = totalChunks ? Math.min(100, Math.floor((completedChunks / totalChunks) * 100)) : 0;
   const etaSeconds =
-    completedChunks > 0
-      ? Math.ceil((elapsedMs / completedChunks / 1_000) * (totalChunks - completedChunks))
-      : 0;
+    estimateRollingEtaSeconds(
+      job.recentChunkDurationsMs,
+      totalChunks - completedChunks,
+      5,
+      job.providers?.length ?? 1,
+    ) ?? 0;
   post({
     type: 'progress',
     state,
@@ -156,11 +170,15 @@ function postProgress(
   });
 }
 
-function metadataWithDefaults(story: Story, metadata: ExportMetadata): ExportMetadata {
+function metadataWithDefaults(
+  story: Story,
+  metadata: ExportMetadata,
+  voice: PiperVoice,
+): ExportMetadata {
   return {
     title: sanitizeFileName(metadata.title.trim() || story.title),
     author: metadata.author.trim() || 'Unknown author',
-    voice: metadata.voice || PIPER_VOICE.name,
+    voice: metadata.voice || voice.name,
   };
 }
 
@@ -213,18 +231,19 @@ async function cachedOrSynthesize(
   fingerprint: string,
   speed: number,
   sentenceIndex: number,
+  voice: PiperVoice,
 ): Promise<{ audio: PcmAudio; key: string; skippedSentenceIndexes: number[] }> {
   const key = await audioCacheKey({
     documentFingerprint: fingerprint,
     provider: `piper-wasm@${PIPER_MODEL_COMMIT}`,
-    voice: PIPER_VOICE.id,
+    voice: voice.id,
     speed,
     text,
   });
   const cached = await store.readPcm(key);
   if (cached) return { audio: cached, key, skippedSentenceIndexes: [] };
   if (job.cancelled) throw new DOMException('The export was cancelled.', 'AbortError');
-  const result = await synthesizeWithRecovery(provider, text, PIPER_VOICE.sampleRate, sentenceIndex);
+  const result = await synthesizeWithRecovery(provider, text, voice.sampleRate, sentenceIndex);
   const audio = normalizePcm(result.audio);
   if (!audio.samples.length) throw new Error('The voice engine returned an empty audio chunk.');
   if (!result.skippedSentenceIndexes.length) await store.writePcm(key, audio);
@@ -234,6 +253,7 @@ async function cachedOrSynthesize(
 function createManifest(
   jobId: string,
   fingerprint: string,
+  voice: PiperVoice,
   settings: AudioExportSettings,
   metadata: ExportMetadata,
   chapters: Array<{ chapter: Chapter; chunks: TextAudioChunk[] }>,
@@ -242,7 +262,7 @@ function createManifest(
     version: 1,
     jobId,
     documentFingerprint: fingerprint,
-    voiceId: PIPER_VOICE.id,
+    voiceId: voice.id,
     settings,
     metadata,
     chapters: chapters.map(({ chapter, chunks }) => ({
@@ -280,7 +300,8 @@ async function writeAudioChunks(
   chapter: Chapter,
   chunks: TextAudioChunk[],
   chapterManifest: ExportChapterManifest,
-  provider: PiperSpeechProvider,
+  providers: PiperSpeechProvider[],
+  voice: PiperVoice,
   settings: AudioExportSettings,
   fingerprint: string,
   chapterIndex: number,
@@ -303,24 +324,46 @@ async function writeAudioChunks(
           .getFileHandle(mp3FileName, { create: true })
           .then((file) => file.createWritable());
   const encoder =
-    settings.format === 'wav' ? undefined : new Mp3StreamEncoder(PIPER_VOICE.sampleRate, settings.bitrate);
+    settings.format === 'wav' ? undefined : new Mp3StreamEncoder(voice.sampleRate, settings.bitrate);
   const queueMp3 = (bytes: Uint8Array) => {
     if (!mp3Writer) return;
     writeChain = writeChain.then(() => writeBytes(mp3Writer, bytes));
   };
+  const prepared = new Map<
+    number,
+    Promise<{ value: Awaited<ReturnType<typeof cachedOrSynthesize>>; elapsedMs: number }>
+  >();
+  let nextToPrepare = 0;
+  const prepareUpcoming = () => {
+    while (prepared.size < providers.length && nextToPrepare < chunks.length) {
+      const index = nextToPrepare++;
+      const provider = providers[index % providers.length];
+      if (!provider) throw new Error('A synthesis worker could not be prepared.');
+      const startedAt = performance.now();
+      const task = cachedOrSynthesize(
+        job,
+        provider,
+        chunks[index]!.text,
+        fingerprint,
+        settings.speed,
+        chunks[index]!.sentenceIndex,
+        voice,
+      ).then((value) => ({ value, elapsedMs: performance.now() - startedAt }));
+      void task.catch(() => undefined);
+      prepared.set(index, task);
+    }
+  };
 
   try {
+    prepareUpcoming();
     for (const [chunkIndex, chunk] of chunks.entries()) {
       await waitForResume(job);
       if (job.cancelled) throw new DOMException('The export was cancelled.', 'AbortError');
-      const cached = await cachedOrSynthesize(
-        job,
-        provider,
-        chunk.text,
-        fingerprint,
-        settings.speed,
-        chunk.sentenceIndex,
-      );
+      const current = prepared.get(chunkIndex);
+      if (!current) throw new Error('A synthesis worker did not return the next audio chunk.');
+      const { value: cached, elapsedMs } = await current;
+      prepared.delete(chunkIndex);
+      prepareUpcoming();
       for (const sentenceIndex of cached.skippedSentenceIndexes) {
         const skipped = {
           chapterIndex,
@@ -339,7 +382,7 @@ async function writeAudioChunks(
           skippedSentences.push(skipped);
         }
       }
-      let audio = resamplePcm(cached.audio, settings.format === 'wav' ? WAV_RATE : PIPER_VOICE.sampleRate);
+      let audio = resamplePcm(cached.audio, settings.format === 'wav' ? WAV_RATE : voice.sampleRate);
       audio = fadePcmBoundaries(audio);
       const key = cached.key;
       chapterManifest.chunkKeys[chunkIndex] = key;
@@ -375,6 +418,7 @@ async function writeAudioChunks(
       chapterManifest.chunkKeys[chunkIndex] = key;
       job.manifest!.updatedAt = Date.now();
       await store.saveManifest(job.manifest!);
+      job.recentChunkDurationsMs.push(elapsedMs);
       postProgress(
         job,
         'generating',
@@ -394,7 +438,7 @@ async function writeAudioChunks(
         throw new Error('A generated chapter could not be read back from local storage.');
       }
       chapterManifest.fileName = mp3FileName;
-      chapterManifest.durationSeconds = sampleCount / PIPER_VOICE.sampleRate;
+      chapterManifest.durationSeconds = sampleCount / voice.sampleRate;
       statuses[chapterIndex] = { title: chapter.title, status: 'done' };
       job.manifest!.updatedAt = Date.now();
       await store.saveManifest(job.manifest!);
@@ -502,10 +546,12 @@ async function assembleOutput(
 
 async function runExport(message: StartMessage, job: ActiveJob): Promise<void> {
   const { story, settings } = message;
+  const voice = getPiperVoice(message.voiceId);
+  if (!voice) throw new Error('The selected downloadable voice is not available.');
   const chapters = selectedChapters(story, settings.chapters);
   if (!chapters.length) throw new Error('Select at least one chapter to export.');
   const fingerprint = documentFingerprint(story);
-  const metadata = metadataWithDefaults(story, message.metadata);
+  const metadata = metadataWithDefaults(story, message.metadata, voice);
   const chapterPlans = chapters.map((chapter) => ({
     chapter,
     chunks: createSentenceChunks(chapter.paragraphs),
@@ -522,7 +568,7 @@ async function runExport(message: StartMessage, job: ActiveJob): Promise<void> {
   const jobId = await sha256(
     JSON.stringify({
       fingerprint,
-      voiceId: PIPER_VOICE.id,
+      voiceId: voice.id,
       settings,
       metadata,
       chapters: chapterPlans.map(({ chapter, chunks }) => ({
@@ -532,7 +578,7 @@ async function runExport(message: StartMessage, job: ActiveJob): Promise<void> {
       })),
     }),
   );
-  const cacheBytes = Math.ceil(durationEstimate * PIPER_VOICE.sampleRate * 2);
+  const cacheBytes = Math.ceil(durationEstimate * voice.sampleRate * 2);
   const requiredBytes = cacheBytes + estimateExportBytes(durationEstimate, settings.format, settings.bitrate);
   const estimate = await store.getUsageEstimate();
   if (
@@ -548,7 +594,7 @@ async function runExport(message: StartMessage, job: ActiveJob): Promise<void> {
   if (
     existing &&
     (existing.documentFingerprint !== fingerprint ||
-      existing.voiceId !== PIPER_VOICE.id ||
+      existing.voiceId !== voice.id ||
       JSON.stringify(existing.settings) !== JSON.stringify(settings) ||
       JSON.stringify(existing.metadata) !== JSON.stringify(metadata) ||
       existing.chapters.length !== chapterPlans.length ||
@@ -565,22 +611,44 @@ async function runExport(message: StartMessage, job: ActiveJob): Promise<void> {
       'A saved audiobook export no longer matches these chapters or settings. Start a new export.',
     );
   }
-  const manifest = existing ?? createManifest(jobId, fingerprint, settings, metadata, chapterPlans);
+  const manifest = existing ?? createManifest(jobId, fingerprint, voice, settings, metadata, chapterPlans);
   manifest.state = 'generating';
   manifest.updatedAt = Date.now();
   job.manifest = manifest;
   await store.saveManifest(manifest);
 
-  const provider = new PiperSpeechProvider();
-  job.provider = provider;
-  provider.setVolume(1);
-  provider.setSpeed(settings.speed);
+  const availableThreads = Math.max(1, scope.navigator.hardwareConcurrency || 1);
+  const deviceMemory = Reflect.get(scope.navigator, 'deviceMemory');
+  const workerCount = recommendedSynthesisWorkers(
+    availableThreads,
+    typeof deviceMemory === 'number' ? deviceMemory : undefined,
+    voice.modelBytes,
+    settings.workerCount ?? 'auto',
+  );
+  const threadLimitPerWorker = piperWorkerThreadCount(
+    scope.crossOriginIsolated,
+    availableThreads,
+    workerCount,
+  );
+  const providers = Array.from({ length: workerCount }, () => new PiperSpeechProvider());
+  job.providers = providers;
+  for (const provider of providers) {
+    provider.setVolume(1);
+    provider.setSpeed(settings.speed);
+    provider.setVoiceId(voice.id);
+    provider.setExecutionMode(settings.executionMode ?? 'auto');
+    provider.setThreadLimit(threadLimitPerWorker);
+  }
+  const provider = providers[0];
+  if (!provider) throw new Error('A synthesis worker could not be prepared.');
   if (!(await provider.isVoiceInstalled())) {
     postProgress(job, 'downloading-voice', 0, totalChunks, 0, 0, []);
     await provider.downloadVoice((loaded, total) =>
       postProgress(job, 'downloading-voice', 0, totalChunks, 0, 0, [], loaded, total),
     );
   }
+  postProgress(job, 'preparing', 0, totalChunks, 0, 0, []);
+  await Promise.all(providers.map((synthesisProvider) => synthesisProvider.prepare()));
 
   const statuses: ChapterStatus[] = chapterPlans.map(({ chapter }) => ({
     title: chapter.title,
@@ -613,7 +681,8 @@ async function runExport(message: StartMessage, job: ActiveJob): Promise<void> {
         plan.chapter,
         plan.chunks,
         chapterManifest,
-        provider,
+        providers,
+        voice,
         settings,
         fingerprint,
         chapterIndex,
@@ -687,6 +756,7 @@ scope.onmessage = (event: MessageEvent<WorkerRequest>) => {
       cancelled: false,
       paused: false,
       startedAt: performance.now(),
+      recentChunkDurationsMs: [],
     };
     activeJob = job;
     void runExport(message, job)
@@ -723,7 +793,7 @@ scope.onmessage = (event: MessageEvent<WorkerRequest>) => {
         });
       })
       .finally(() => {
-        job.provider?.cancelAll();
+        for (const provider of job.providers ?? []) provider.cancelAll();
         if (activeJob === job) activeJob = undefined;
       });
     return;
@@ -739,5 +809,5 @@ scope.onmessage = (event: MessageEvent<WorkerRequest>) => {
   }
   activeJob.cancelled = true;
   activeJob.paused = false;
-  activeJob.provider?.cancelAll();
+  for (const provider of activeJob.providers ?? []) provider.cancelAll();
 };

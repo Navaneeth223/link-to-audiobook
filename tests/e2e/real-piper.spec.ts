@@ -15,9 +15,17 @@ test('real Piper synthesizes and decodes an MP3 containing typographic input', a
     Object.defineProperty(window, 'showSaveFilePicker', { configurable: true, value: undefined });
   });
   const startedAt = Date.now();
-  const source =
-    'Chapter One\nA ﬁle—“quoted text” — is ready. A soft\u00adhyphen and replacement\uFFFD mark.';
   await page.goto('/');
+  const deviceCapabilities = await page.evaluate(() => ({
+    crossOriginIsolated,
+    hardwareConcurrency: navigator.hardwareConcurrency,
+    deviceMemory: navigator.deviceMemory ?? null,
+    webGpuExposed: 'gpu' in navigator,
+  }));
+  const source =
+    'Chapter One\nA ﬁle—“quoted text” — is ready. A soft\u00adhyphen and replacement\uFFFD mark. ' +
+    'The reader keeps synthesis local to this browser. Five short sentences make a useful benchmark. ' +
+    'This final sentence confirms the audio worker can continue after its warmup.';
   await page.locator('input[type="file"]').first().setInputFiles({
     name: 'piper-regression.txt',
     mimeType: 'text/plain',
@@ -27,6 +35,26 @@ test('real Piper synthesizes and decodes an MP3 containing typographic input', a
   await page.getByRole('button', { name: 'Download audiobook' }).first().click();
   const dialog = page.getByRole('dialog', { name: 'Create audiobook' });
   await dialog.getByLabel('Voice').selectOption('en_US-libritts-high');
+  await dialog.locator('.audiobook-advanced summary').click();
+  await dialog.getByLabel('Synthesis workers').selectOption('1');
+  await dialog.getByLabel('Inference engine').selectOption('auto');
+  await dialog.getByRole('button', { name: 'Measure generation speed on this device' }).click();
+  const benchmark = dialog.locator('.audiobook-status').filter({ hasText: 'Five-sentence benchmark:' });
+  const benchmarkError = dialog.getByRole('alert');
+  let lastBenchmarkPhase = '';
+  const benchmarkDeadline = Date.now() + 4 * 60 * 1_000;
+  while (Date.now() < benchmarkDeadline) {
+    const status = (await dialog.locator('[role="status"]').allInnerTexts()).join(' · ');
+    if (/Preparing|Measuring/iu.test(status) && status !== lastBenchmarkPhase) {
+      console.log('LIVE_PIPER_BENCHMARK_PHASE', status);
+      lastBenchmarkPhase = status;
+    }
+    if (await benchmark.isVisible() || (await benchmarkError.isVisible())) break;
+    await page.waitForTimeout(500);
+  }
+  await expect(benchmark.or(benchmarkError)).toBeVisible({ timeout: 4 * 60 * 1_000 });
+  if (await benchmarkError.isVisible()) throw new Error(await benchmarkError.innerText());
+  const benchmarkResult = await benchmark.innerText();
   await dialog.getByRole('checkbox', { name: /I have the right to convert this document/u }).check();
   await dialog.getByRole('button', { name: 'Start export' }).click();
 
@@ -63,6 +91,8 @@ test('real Piper synthesizes and decodes an MP3 containing typographic input', a
       totalElapsedSeconds: (Date.now() - startedAt) / 1_000,
       decodedAudioSeconds: decoded.duration,
       endToEndRealtimeFactor: decoded.duration / ((Date.now() - startedAt) / 1_000),
+      warmedBenchmark: benchmarkResult,
+      deviceCapabilities,
       skippedSentenceWarnings: (await warning.count()) ? await warning.innerText() : '',
     }),
   );
@@ -71,6 +101,7 @@ test('real Piper synthesizes and decodes an MP3 containing typographic input', a
       durationSeconds: decoded.duration,
       samples: decoded.samples,
       elapsedSeconds: (Date.now() - startedAt) / 1_000,
+      warmedBenchmark: benchmarkResult,
       resultText,
     }),
     contentType: 'application/json',

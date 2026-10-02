@@ -2,6 +2,7 @@ import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
 import {
   audioCacheKey,
+  createSentenceChunks,
   createChapterMp3,
   createChapterZip,
   createId3Tag,
@@ -10,9 +11,11 @@ import {
   estimateAudioSeconds,
   estimateExportBytes,
   estimateGenerationSeconds,
+  estimateRollingEtaSeconds,
   fadePcmBoundaries,
   insertSilence,
   normalizePcm,
+  recommendedSynthesisWorkers,
   resamplePcm,
   sanitizeFileName,
   selectedChapters,
@@ -80,6 +83,21 @@ describe('audiobook export primitives', () => {
     expect(sanitizeFileName('name'.repeat(40))).toHaveLength(120);
   });
 
+  it('merges short sentences without crossing paragraph boundaries or exceeding the model limit', () => {
+    const chunks = createSentenceChunks([
+      { id: 'p1', text: 'First sentence. Second sentence! Third sentence?' },
+      { id: 'p2', text: 'A'.repeat(850) },
+    ]);
+    expect(chunks[0]).toMatchObject({
+      text: 'First sentence. Second sentence! Third sentence?',
+      paragraphIndex: 0,
+      sentenceIndex: 0,
+      endsParagraph: true,
+    });
+    expect(chunks.slice(1).every((chunk) => chunk.paragraphIndex === 1)).toBe(true);
+    expect(chunks.every((chunk) => chunk.text.length <= 380)).toBe(true);
+  });
+
   it('estimates duration, file sizes, and generation time from the selected chapters', () => {
     expect(estimateAudioSeconds(story, [0, 1])).toBe(1.2);
     expect(estimateAudioSeconds(story, [1])).toBe(0.4);
@@ -87,6 +105,23 @@ describe('audiobook export primitives', () => {
     expect(estimateExportBytes(3_600, 'mp3-chapters', 96)).toBe(43_202_048);
     expect(estimateGenerationSeconds(600, 2.5)).toBe(1_500);
     expect(selectedChapters(story, [1, 1, -1, 9]).map((chapter) => chapter.title)).toEqual(['Two']);
+  });
+
+  it('waits for five completed chunks and estimates ETA from recent chunk timings', () => {
+    expect(estimateRollingEtaSeconds([1_000, 1_000, 1_000, 1_000], 5)).toBeUndefined();
+    expect(estimateRollingEtaSeconds([1_000, 1_000, 1_000, 1_000, 2_000], 3)).toBe(4);
+    expect(estimateRollingEtaSeconds([1_000, 2_000, 3_000, 4_000, 5_000, 6_000], 2)).toBe(7);
+    expect(estimateRollingEtaSeconds([1_000, 1_000, 1_000, 1_000, 1_000], 8, 5, 2)).toBe(4);
+    expect(estimateRollingEtaSeconds([1_000, 1_000, 1_000, 1_000, 1_000], -1)).toBeUndefined();
+  });
+
+  it('caps the synthesis worker pool by cores and a conservative memory budget', () => {
+    expect(recommendedSynthesisWorkers(12, 8, 136_673_811)).toBe(4);
+    expect(recommendedSynthesisWorkers(4, 4, 136_673_811)).toBe(2);
+    expect(recommendedSynthesisWorkers(12, 8, 136_673_811, 1)).toBe(1);
+    expect(recommendedSynthesisWorkers(12, 2, 136_673_811, 4)).toBe(1);
+    expect(recommendedSynthesisWorkers(12, undefined, 136_673_811)).toBe(1);
+    expect(recommendedSynthesisWorkers(1, 16, 136_673_811)).toBe(1);
   });
 
   it('builds stable text-addressed cache keys without storing text in the result', async () => {

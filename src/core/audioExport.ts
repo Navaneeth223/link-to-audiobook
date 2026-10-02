@@ -12,6 +12,8 @@ export type AudioExportSettings = {
   pauseBetweenParagraphsMs: number;
   pauseBetweenChaptersMs: number;
   chapters: number[];
+  executionMode?: 'auto' | 'cpu' | 'gpu';
+  workerCount?: 'auto' | 1 | 2 | 3 | 4;
 };
 export type ExportMetadata = { title: string; author: string; voice: string; albumTitle?: string };
 export type TextAudioChunk = {
@@ -31,16 +33,30 @@ export function createSentenceChunks(paragraphs: Paragraph[]): TextAudioChunk[] 
   for (const [paragraphIndex, paragraph] of paragraphs.entries()) {
     const sentences = splitSentences(paragraph.text);
     const paragraphChunks: Array<{ text: string; sentenceIndex: number }> = [];
+    let bufferedText = '';
+    let bufferedSentenceIndex = 0;
+    const flushBuffered = () => {
+      if (!bufferedText) return;
+      paragraphChunks.push({ text: bufferedText, sentenceIndex: bufferedSentenceIndex });
+      bufferedText = '';
+    };
     for (const [sentenceIndex, sentence] of sentences.entries()) {
       let remaining = sentence.trim();
       while (remaining.length > MAX_SYNTHESIS_CHARS) {
+        flushBuffered();
         let splitAt = remaining.lastIndexOf(' ', MAX_SYNTHESIS_CHARS);
         if (splitAt < 1) splitAt = MAX_SYNTHESIS_CHARS;
         paragraphChunks.push({ text: remaining.slice(0, splitAt).trim(), sentenceIndex });
         remaining = remaining.slice(splitAt).trim();
       }
-      if (remaining) paragraphChunks.push({ text: remaining, sentenceIndex });
+      if (!remaining) continue;
+      if (bufferedText && bufferedText.length + remaining.length + 1 > MAX_SYNTHESIS_CHARS) {
+        flushBuffered();
+      }
+      if (!bufferedText) bufferedSentenceIndex = sentenceIndex;
+      bufferedText = bufferedText ? `${bufferedText} ${remaining}` : remaining;
     }
+    flushBuffered();
     for (const [index, chunk] of paragraphChunks.entries()) {
       chunks.push({
         text: chunk.text,
@@ -94,6 +110,42 @@ export function estimateExportBytes(
 export function estimateGenerationSeconds(durationSeconds: number, measuredSpeed: number): number {
   if (!Number.isFinite(measuredSpeed) || measuredSpeed <= 0) return durationSeconds * 4;
   return Math.ceil(durationSeconds * measuredSpeed);
+}
+
+export function estimateRollingEtaSeconds(
+  completedChunkDurationsMs: readonly number[],
+  remainingChunks: number,
+  minimumSamples = 5,
+  concurrency = 1,
+): number | undefined {
+  if (
+    completedChunkDurationsMs.length < minimumSamples ||
+    !Number.isInteger(remainingChunks) ||
+    remainingChunks < 0 ||
+    !Number.isFinite(concurrency) ||
+    concurrency < 1
+  ) {
+    return undefined;
+  }
+  const recent = completedChunkDurationsMs.slice(-10);
+  const averageMs = recent.reduce((total, duration) => total + duration, 0) / recent.length;
+  return Math.ceil((averageMs * remainingChunks) / (1_000 * concurrency));
+}
+
+export function recommendedSynthesisWorkers(
+  hardwareConcurrency: number,
+  deviceMemoryGiB: number | undefined,
+  modelBytes: number,
+  preferredWorkerCount: number | 'auto' = 'auto',
+): number {
+  const availableCores = Number.isFinite(hardwareConcurrency) ? Math.max(1, Math.floor(hardwareConcurrency)) : 1;
+  const target = Math.max(1, Math.min(4, Math.floor(availableCores / 2)));
+  if (!Number.isFinite(deviceMemoryGiB) || deviceMemoryGiB! <= 0 || modelBytes <= 0) return 1;
+  const estimatedWorkerBytes = modelBytes * 2.5;
+  const memoryBudgetBytes = deviceMemoryGiB! * 1024 ** 3 * 0.2;
+  const memoryLimit = Math.max(1, Math.floor(memoryBudgetBytes / estimatedWorkerBytes));
+  const preferred = preferredWorkerCount === 'auto' ? target : Math.max(1, Math.floor(preferredWorkerCount));
+  return Math.min(target, memoryLimit, preferred);
 }
 
 export async function audioCacheKey(input: {

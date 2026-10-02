@@ -6,12 +6,14 @@ Important runtime dependencies include React, Vite, TypeScript, Lucide React, PD
 
 ## Downloadable Piper voice engine
 
-The Piper feature loads its runtime files and selected voice model in the browser. Story text is sent only to a local Web Worker; it is not sent to the runtime or model hosts.
+The Piper feature loads its selected voice model and pinned phonemizer files in the browser. ONNX Runtime WASM
+assets are copied from the locked npm package into the production build by `scripts/copy-onnxruntime.mjs`.
+Story text is sent only to local Web Workers; it is not sent to model or runtime hosts.
 
 | Component | Version / source | License | Use and notes |
 |---|---|---|---|
 | `@mintplex-labs/piper-tts-web` | 1.0.5 | MIT | JavaScript Piper inference wrapper. |
-| ONNX Runtime Web (`onnxruntime-web`) | 1.30.0 | MIT | Browser inference runtime; WASM assets are pinned to this exact npm version. |
+| ONNX Runtime Web (`onnxruntime-web`) | 1.30.0 | MIT | Browser inference runtime; the build self-hosts its ESM loader and WASM files from this exact npm version, including the WebGPU JSEP assets. |
 | `@diffusionstudio/piper-wasm` | 1.0.0 | MIT declared by package | Browser phonemizer WASM package. Its README says the build includes Piper phonemization and eSpeak NG. |
 | Piper phonemize | Upstream `rhasspy/piper-phonemize` | MIT | Source license is MIT. |
 | eSpeak NG | Upstream `rhasspy/espeak-ng` | GPL-3.0-or-later | The software license is GPL-3.0-or-later. The WASM package's published build instructions use an unpinned upstream clone, so its exact embedded source revision is not disclosed. The project records this limitation rather than claiming a reproducible build. |
@@ -23,13 +25,17 @@ GPL-3.0-or-later components are compatible with this AGPL-3.0-or-later project u
 
 ## Offered Piper voice model
 
-Only the English (US) LibriTTS high-quality voice is currently an eligible model candidate. Its model files are fetched from the immutable `rhasspy/piper-voices` revision `375a0fe641dea077c2a47b4e9a056d6da521eed3`.
+The two English (US) models below are eligible and are fetched from the immutable `rhasspy/piper-voices`
+revision `375a0fe641dea077c2a47b4e9a056d6da521eed3`.
 
 | Voice/model | Repository metadata license | Training data and model-card statement | Size |
 |---|---|---|---:|
 | `en_US-libritts-high` (speaker `p3922`, index 0) | MIT (`rhasspy/piper-voices` repository metadata at the pinned revision) | Model card says trained from scratch on LibriTTS `train-clean-360`; dataset license is CC BY 4.0. | 136,673,811-byte ONNX model + 20,163-byte config |
+| `en_US-libritts_r-medium` (voice labelled Fast) | MIT (same pinned repository metadata) | Its model card identifies LibriTTS-R from OpenSLR 141, licensed CC BY 4.0; medium-quality model fine-tuned from English lessac medium. | 78,580,914-byte ONNX model + 20,123-byte config |
 
-The model-card and repository metadata are distinct: the model card identifies the training dataset license, while the repository revision declares MIT. This distinction is retained in the UI/docs and does not imply that the recorded speaker or dataset is owned by this project. Other reviewed candidate voices with non-commercial or unclear terms are not offered.
+The model-card and repository metadata are distinct: model cards identify dataset terms, while the repository
+revision declares MIT. This distinction is retained in the UI/docs and does not imply that the recorded speaker
+or dataset is owned by this project. Other candidate voices with non-commercial or unclear terms are not offered.
 
 Sources reviewed:
 
@@ -39,6 +45,7 @@ Sources reviewed:
 - [Piper phonemize license](https://github.com/rhasspy/piper-phonemize/blob/master/LICENSE.md)
 - [eSpeak NG license and notices](https://github.com/rhasspy/espeak-ng)
 - [Pinned LibriTTS voice model card](https://huggingface.co/rhasspy/piper-voices/blob/375a0fe641dea077c2a47b4e9a056d6da521eed3/en/en_US/libritts/high/MODEL_CARD)
+- [Pinned LibriTTS-R medium voice model card](https://huggingface.co/rhasspy/piper-voices/blob/375a0fe641dea077c2a47b4e9a056d6da521eed3/en/en_US/libritts_r/medium/MODEL_CARD)
 - [Pinned Piper voice repository metadata](https://huggingface.co/api/models/rhasspy/piper-voices/revision/375a0fe641dea077c2a47b4e9a056d6da521eed3)
 
 ## Development and test tooling added for audiobook export work

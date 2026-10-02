@@ -51,6 +51,16 @@ function isAudioExportSettings(value: unknown): value is AudioExportSettings {
     Number.isInteger(settings.pauseBetweenChaptersMs) &&
     settings.pauseBetweenChaptersMs! >= 0 &&
     settings.pauseBetweenChaptersMs! <= 3_000 &&
+    (settings.executionMode === undefined ||
+      settings.executionMode === 'auto' ||
+      settings.executionMode === 'cpu' ||
+      settings.executionMode === 'gpu') &&
+    (settings.workerCount === undefined ||
+      settings.workerCount === 'auto' ||
+      settings.workerCount === 1 ||
+      settings.workerCount === 2 ||
+      settings.workerCount === 3 ||
+      settings.workerCount === 4) &&
     Array.isArray(settings.chapters) &&
     settings.chapters.every((chapter) => Number.isInteger(chapter) && chapter >= 0)
   );

@@ -11,29 +11,29 @@ Audit date: 2026-10-02. Status is based on the tracked source and current packag
 | Describe voluntary donations accurately                     | PARTIAL | `README.md`, `docs/DONATIONS.md`, `src/core/donationLinks.ts`; no real destination is configured.          |
 | No paid service or mandatory API key                        | PARTIAL | `README.md`; optional Microsoft OAuth is required for current shared-link path.                            |
 | Domain values configured through env and documented         | MISSING | No `docs/DEPLOYMENT.md`.                                                                                   |
-| Baseline commit on a new branch and commit after each phase | MISSING | Current Git history has feature commits; this environment exposes `.git` as read-only.                     |
+| Baseline commit on a new branch and commit after each phase | PARTIAL | Feature commits exist on `feature/audiobook-export`; phase commits are recorded separately in Git history. |
 
 ## Audiobook export — current feature branch
 
 | Requirement                                                                                                   | Status          | Evidence / limit                                                                                                                                                                                                          |
 | ------------------------------------------------------------------------------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Browser-only Piper PCM synthesis in a dedicated worker                                                        | PARTIAL         | `src/core/piper.ts`, `src/core/piper.worker.ts`; speech-only sanitization and voice-config phoneme-ID filtering guard ONNX inference; live model download/inference smoke test passes on Chromium.                                |
+| Browser-only Piper PCM synthesis in a dedicated worker                                                        | PARTIAL         | `src/core/piper.ts`, `src/core/piper.worker.ts`; speech-only sanitization, phoneme-ID filtering, serialized inference requests and cross-worker model/config locking; live MP3 smoke test passes on Chromium.                     |
 | MP3 chapter ZIP, chapter-marked MP3, and streaming WAV                                                        | PARTIAL         | `src/core/audioExport.ts`, `src/core/audiobookExport.worker.ts`; format primitives, mocked ZIP download, and live Piper MP3 decode smoke test pass; real chapter tagging and WAV output parsing remain outstanding.           |
 | Progress, pause/resume, cancellation, retry, storage cleanup, and interrupted-job restore                     | PARTIAL         | `src/ui/AudiobookExportDialog.tsx`, `src/core/audioExportStore.ts`, `src/core/audioSynthesis.ts`; bounded sentence recovery inserts silence and tracks skipped locations; storage-full behavior remains unverified.             |
 | Personal-use confirmation, browser-voice explanation, privacy viewer and model deletion                       | DONE            | `src/ui/AudiobookExportDialog.tsx`, `src/ui/App.tsx`, `src/core/privacyData.ts`; deletion status is surfaced, while the browser may refuse local storage removal.                                                         |
 | Cross-browser export verification, M4B/AAC, covers, Voice Studio, cloud TTS, and pitch/pronunciation controls | NOT IMPLEMENTED | Chromium mock-only export path is tested; Firefox/WebKit model inference, M4B/AAC, cover art, Voice Studio, cloud TTS, pitch, and pronunciation dictionaries are not shipped.                                             |
-| Actual generation-speed measurement on this development machine                                               | PARTIAL         | `tests/e2e/real-piper.spec.ts` reports end-to-end speed including model preparation; the isolated 5-sentence benchmark and warmed-inference RTF requested in Step 2 are not yet measured.                                   |
+| Actual generation-speed measurement on this development machine                                               | PARTIAL         | Warmed five-sentence CPU RTF: 0.11× one WASM thread, 0.16–0.31× up to four threads, and 0.35× with four workers. WebGPU failed and fell back to CPU; the five-minute fixture remains unmeasured.                              |
 
 ### Latest validation
 
 | Command              | Result                                                                                                           |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `npm run check`      | Passed: TypeScript typecheck, ESLint (10 legacy warnings, 0 errors), and 55 unit tests across 14 files.          |
+| `npm run check`      | Passed: TypeScript typecheck, ESLint (10 legacy warnings, 0 errors), and 60 unit tests across 14 files.          |
 | `npm run build`      | Passed. Vite warned that Piper-package imports of `fs`, `path`, and `crypto` are externalized for browser builds. |
 | `npm run test:e2e`   | Passed: 22 tests; 26 skipped by viewport-only/live-test opt-ins. Six Chromium viewport profiles ran.              |
 | `npm run test:visual`| Passed: 7 tests; 5 intentionally skipped because four-theme dialog captures run at desktop size only.             |
 
-Dialog screenshots were attached for Light, Sepia, Dark, and High Contrast, and each passed axe checks. These are screenshot captures, not image-diff baselines. The headed real-Piper smoke test passed after a 94.76-second cold end-to-end run, produced a 3.81-second MP3, and decoded it in Chromium; it is opt-in because it downloads the model. Mocked worker tests cover pause/resume/cancel and reload recovery. Cross-browser export and real storage-full behavior remain unverified.
+Dialog screenshots were attached for Light, Sepia, Dark, and High Contrast, and each passed axe checks. These are screenshot captures, not image-diff baselines. Opt-in real-Piper Chromium tests passed and decoded the chapter MP3. Warmed five-sentence RTFs were 0.11× at one WASM thread, 0.16–0.31× up to four threads, and 0.35× with a four-worker CPU pool across separate runs. WebGPU was exposed but ONNX session creation failed and fell back to CPU (0.17× on the latest run). The latest 13.74-second output took 281.17 seconds end to end, including preparation and export. The five-minute fixture and Turbo engine remain unmeasured or unimplemented. Mocked worker tests cover pause/resume/cancel and reload recovery. Cross-browser export and real storage-full behavior remain unverified.
 
 ## Phase 0 — Audit
 

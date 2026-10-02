@@ -5,6 +5,7 @@ import {
   estimateAudioSeconds,
   estimateExportBytes,
   estimateGenerationSeconds,
+  recommendedSynthesisWorkers,
   sanitizeFileName,
   type AudioExportFormat,
   type AudioExportSettings,
@@ -14,7 +15,15 @@ import { documentFingerprint } from '../core/bookmarks';
 import { AudioExportStore, type AudioExportManifest } from '../core/audioExportStore';
 import { registerActiveExport, registerGeneratedAudioCleanup } from '../core/audioExportRegistry';
 import { splitSentences, type Story } from '../core/document';
-import { PIPER_VOICE, PiperSpeechProvider } from '../core/piper';
+import {
+  DOWNLOADABLE_PIPER_VOICES,
+  getPiperVoice,
+  PIPER_VOICE,
+  PiperSpeechProvider,
+  piperWasmThreadCount,
+  piperWorkerThreadCount,
+} from '../core/piper';
+import type { PiperExecutionMode, PiperVoiceId } from '../core/piper';
 import type { VolumePreferences } from '../core/volumePreferences';
 
 type ExportProgress = {
@@ -120,7 +129,9 @@ export function AudiobookExportDialog({ story, currentChapterIndex, speed, volum
   const [title, setTitle] = useState(story.title);
   const [author, setAuthor] = useState('');
   const [consented, setConsented] = useState(false);
-  const [voiceSelected, setVoiceSelected] = useState(false);
+  const [selectedVoiceId, setSelectedVoiceId] = useState<PiperVoiceId | 'browser'>('browser');
+  const [executionMode, setExecutionMode] = useState<PiperExecutionMode>('auto');
+  const [workerCount, setWorkerCount] = useState<'auto' | 1 | 2 | 3 | 4>('auto');
   const storageAvailable = typeof navigator.storage?.getDirectory === 'function';
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -131,6 +142,7 @@ export function AudiobookExportDialog({ story, currentChapterIndex, speed, volum
   const [savedLocationName, setSavedLocationName] = useState('');
   const [previewPlaying, setPreviewPlaying] = useState(false);
   const [measuredSpeed, setMeasuredSpeed] = useState<number | undefined>();
+  const [measuredExecutionMode, setMeasuredExecutionMode] = useState<'cpu' | 'gpu'>();
   const [benchmarkStatus, setBenchmarkStatus] = useState('');
   const [resumeCandidate, setResumeCandidate] = useState<AudioExportManifest | null>(null);
   const [checkingResume, setCheckingResume] = useState(false);
@@ -145,6 +157,9 @@ export function AudiobookExportDialog({ story, currentChapterIndex, speed, volum
   const unregisterCancelRef = useRef<(() => void) | null>(null);
 
   const selectedSeconds = estimateAudioSeconds(story, selected);
+  const gpuAvailable = 'gpu' in navigator;
+  const selectedVoice = selectedVoiceId === 'browser' ? undefined : getPiperVoice(selectedVoiceId);
+  const voiceSelected = selectedVoice !== undefined;
   const estimatedSize = estimateExportBytes(selectedSeconds, format, bitrate);
   const generationSeconds = estimateGenerationSeconds(selectedSeconds, measuredSpeed ?? 4);
   const durationLimitExceeded = selectedSeconds > 10 * 60 * 60;
@@ -163,7 +178,7 @@ export function AudiobookExportDialog({ story, currentChapterIndex, speed, volum
           .filter(
             (manifest) =>
               manifest.documentFingerprint === fingerprint &&
-              manifest.voiceId === PIPER_VOICE.id &&
+              DOWNLOADABLE_PIPER_VOICES.some((voice) => manifest.voiceId === voice.id) &&
               manifest.state !== 'complete' &&
               manifest.settings.chapters.length > 0 &&
               manifest.settings.chapters.every((index) => index < story.chapters.length),
@@ -184,10 +199,12 @@ export function AudiobookExportDialog({ story, currentChapterIndex, speed, volum
     setExportVolume(settings.volume);
     setPauseBetweenParagraphsMs(settings.pauseBetweenParagraphsMs);
     setPauseBetweenChaptersMs(settings.pauseBetweenChaptersMs);
+    setExecutionMode(settings.executionMode ?? 'auto');
+    setWorkerCount(settings.workerCount ?? 'auto');
     setSelected(settings.chapters);
     setTitle(metadata.title);
     setAuthor(metadata.author === 'Unknown author' ? '' : metadata.author);
-    setVoiceSelected(true);
+    setSelectedVoiceId(getPiperVoice(resumeCandidate.voiceId)?.id ?? PIPER_VOICE.id);
     setConsented(false);
     setResumeNotice(
       'Review the restored settings, acknowledge the personal-use notice, then start to resume.',
@@ -332,38 +349,139 @@ export function AudiobookExportDialog({ story, currentChapterIndex, speed, volum
   };
 
   const measureDevice = async () => {
-    const firstPassage = selected
-      .flatMap((chapterIndex) => story.chapters[chapterIndex]?.paragraphs ?? [])
-      .flatMap((paragraph) => splitSentences(paragraph.text))
-      .slice(0, 3)
-      .join(' ');
-    if (!firstPassage) {
-      setError('Select a chapter with text before measuring generation speed.');
+    if (!selectedVoice) {
+      setError('Choose a downloadable voice before measuring generation speed.');
       return;
     }
-    const provider = new PiperSpeechProvider();
-    provider.setSpeed(exportSpeed);
+    const sampleSentences = selected
+      .flatMap((chapterIndex) => story.chapters[chapterIndex]?.paragraphs ?? [])
+      .flatMap((paragraph) => splitSentences(paragraph.text))
+      .slice(0, 5);
+    if (sampleSentences.length < 5) {
+      setError('Select chapters containing at least five sentences before measuring generation speed.');
+      return;
+    }
     setBusy(true);
     setError('');
-    setBenchmarkStatus('Checking the downloadable voice…');
+    const memory = Reflect.get(navigator, 'deviceMemory');
+    const benchmarkWorkers = recommendedSynthesisWorkers(
+      navigator.hardwareConcurrency,
+      typeof memory === 'number' ? memory : undefined,
+      selectedVoice.modelBytes,
+      workerCount,
+    );
+    const multiThreadLimit = piperWasmThreadCount(crossOriginIsolated, navigator.hardwareConcurrency);
+    const poolThreadLimit = piperWorkerThreadCount(
+      crossOriginIsolated,
+      navigator.hardwareConcurrency,
+      benchmarkWorkers,
+    );
+    const profiles: Array<{
+      label: string;
+      executionMode: PiperExecutionMode;
+      workers: number;
+      threads: number;
+    }> = [];
+    if (
+      executionMode === 'cpu' &&
+      (benchmarkWorkers > 1 || poolThreadLimit > 1)
+    ) {
+      profiles.push({
+        label: 'CPU single-thread',
+        executionMode: 'cpu',
+        workers: 1,
+        threads: 1,
+      });
+    }
+    profiles.push({
+      label:
+        benchmarkWorkers > 1
+          ? `CPU ${benchmarkWorkers}-worker pool`
+          : `CPU ${poolThreadLimit}-thread`,
+      executionMode: 'cpu',
+      workers: benchmarkWorkers,
+      threads: poolThreadLimit,
+    });
+    if (executionMode !== 'cpu' && gpuAvailable) {
+      profiles.push({
+        label: 'GPU',
+        executionMode: 'gpu',
+        workers: 1,
+        threads: multiThreadLimit,
+      });
+    }
+    const profilesToRun =
+      executionMode === 'gpu'
+        ? profiles.filter((profile) => profile.executionMode === 'gpu')
+        : profiles;
+    const measurements: Array<{
+      label: string;
+      backend: 'cpu' | 'gpu';
+      realTimeFactor: number;
+      fallbackReason: string;
+    }> = [];
     try {
-      if (!(await provider.isVoiceInstalled())) {
-        setBenchmarkStatus(`Downloading the ${formatBytes(PIPER_VOICE.modelBytes)} voice model…`);
-        await provider.downloadVoice((loaded, total) => {
-          setBenchmarkStatus(`Downloading voice model · ${Math.floor((loaded / total) * 100)}%`);
-        });
+      for (const profile of profilesToRun) {
+        const providers = Array.from({ length: profile.workers }, () => new PiperSpeechProvider());
+        for (const provider of providers) {
+          provider.setSpeed(exportSpeed);
+          provider.setVoiceId(selectedVoice.id);
+          provider.setExecutionMode(profile.executionMode);
+          provider.setThreadLimit(profile.threads);
+        }
+        try {
+          setBenchmarkStatus(`Preparing ${profile.label} and warming up the audio engine…`);
+          const firstProvider = providers[0];
+          if (!firstProvider) throw new Error('No synthesis worker is available for benchmarking.');
+          if (!(await firstProvider.isVoiceInstalled())) {
+            setBenchmarkStatus(`Downloading the ${formatBytes(selectedVoice.modelBytes)} voice model…`);
+            await firstProvider.downloadVoice((loaded, total) => {
+              setBenchmarkStatus(`Downloading voice model · ${Math.floor((loaded / total) * 100)}%`);
+            });
+          }
+          await Promise.all(providers.map((provider) => provider.synthesize(sampleSentences[0]!)));
+          setBenchmarkStatus(`Measuring five sentences with ${profile.label}…`);
+          const started = performance.now();
+          const audios = await Promise.all(
+            sampleSentences.map((sentence, index) =>
+              providers[index % providers.length]!.synthesize(sentence),
+            ),
+          );
+          const audioSeconds = audios.reduce(
+            (total, audio) => total + audio.samples.length / audio.sampleRate,
+            0,
+          );
+          const elapsedSeconds = (performance.now() - started) / 1_000;
+          const reports = providers.map((provider) => provider.getExecutionReport());
+          const report = reports.find((item) => item.backend === 'gpu') ?? reports[0]!;
+          measurements.push({
+            label: `${profile.label}${report.backend !== profile.executionMode ? ` (${report.backend.toUpperCase()} fallback)` : ''}`,
+            backend: report.backend,
+            realTimeFactor: audioSeconds / Math.max(0.001, elapsedSeconds),
+            fallbackReason: reports.find((item) => item.fallbackReason)?.fallbackReason ?? '',
+          });
+        } finally {
+          for (const provider of providers) provider.cancelAll();
+        }
       }
-      setBenchmarkStatus('Measuring a few sentences on this device…');
-      const started = performance.now();
-      const audio = await provider.synthesize(firstPassage);
-      const audioSeconds = audio.samples.length / audio.sampleRate;
-      setMeasuredSpeed(Math.max(0.01, (performance.now() - started) / 1_000 / audioSeconds));
-      setBenchmarkStatus('Measurement complete. The estimate uses this device’s result.');
+      const successfulMeasurements = measurements.filter((measurement) => !measurement.fallbackReason);
+      const fastest = [...(successfulMeasurements.length ? successfulMeasurements : measurements)].sort(
+        (left, right) => right.realTimeFactor - left.realTimeFactor,
+      )[0];
+      if (!fastest) throw new Error('No engine completed the speed benchmark.');
+      setMeasuredSpeed(1 / Math.max(0.01, fastest.realTimeFactor));
+      setMeasuredExecutionMode(fastest.backend);
+      const details = measurements
+        .map((measurement) => `${measurement.label} ${measurement.realTimeFactor.toFixed(2)}×`)
+        .join(' · ');
+      const fallback = measurements.find((measurement) => measurement.fallbackReason)?.fallbackReason;
+      setBenchmarkStatus(
+        `Five-sentence benchmark: ${details}. Selected ${fastest.label}; preparation excluded.${fallback ? ` ${fallback}` : ''}`,
+      );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'This device could not measure voice generation.');
       setBenchmarkStatus('');
     } finally {
-      provider.cancelAll();
       setBusy(false);
     }
   };
@@ -392,8 +510,12 @@ export function AudiobookExportDialog({ story, currentChapterIndex, speed, volum
       pauseBetweenParagraphsMs,
       pauseBetweenChaptersMs,
       chapters: [...selected],
+      workerCount,
+      executionMode:
+        executionMode === 'auto' ? (measuredExecutionMode ?? 'auto') : executionMode,
     };
-    const metadata: ExportMetadata = { title: titleForFile, author, voice: PIPER_VOICE.name };
+    if (!selectedVoice) return;
+    const metadata: ExportMetadata = { title: titleForFile, author, voice: selectedVoice.name };
     try {
       const worker = new Worker(new URL('../core/audiobookExport.worker.ts', import.meta.url), {
         type: 'module',
@@ -463,7 +585,14 @@ export function AudiobookExportDialog({ story, currentChapterIndex, speed, volum
         closeWorker();
         setError('The export worker stopped unexpectedly. You can try to resume the export.');
       };
-      worker.postMessage({ type: 'start', story, settings, metadata, saveHandle });
+      worker.postMessage({
+        type: 'start',
+        story,
+        voiceId: selectedVoice.id,
+        settings,
+        metadata,
+        saveHandle,
+      });
     } catch {
       closeWorker();
       setError('The audiobook worker could not start in this browser.');
@@ -581,19 +710,39 @@ export function AudiobookExportDialog({ story, currentChapterIndex, speed, volum
           <label className="audiobook-field">
             <span>Voice</span>
             <select
-              value={voiceSelected ? PIPER_VOICE.id : 'browser'}
-              onChange={(event) => setVoiceSelected(event.target.value === PIPER_VOICE.id)}
+              value={selectedVoiceId}
+              onChange={(event) => {
+                const nextVoice = getPiperVoice(event.target.value);
+                setSelectedVoiceId(nextVoice?.id ?? 'browser');
+                setMeasuredSpeed(undefined);
+                setMeasuredExecutionMode(undefined);
+                setBenchmarkStatus('');
+              }}
             >
               <option value="browser" disabled>
                 Browser voice · not downloadable
               </option>
-              <option value={PIPER_VOICE.id}>{PIPER_VOICE.name} · Downloadable</option>
+              {DOWNLOADABLE_PIPER_VOICES.map((voice) => (
+                <option key={voice.id} value={voice.id}>
+                  {voice.tier === 'fast' ? 'Fast' : 'High quality'} · {voice.name} ·{' '}
+                  {formatBytes(voice.modelBytes)}
+                </option>
+              ))}
             </select>
           </label>
           {!voiceSelected && (
             <div className="audiobook-browser-note" role="status">
               <p>Browser and operating-system voices cannot provide audio samples for file export.</p>
-              <button className="secondary-button" type="button" onClick={() => setVoiceSelected(true)}>
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() => {
+                  setSelectedVoiceId(PIPER_VOICE.id);
+                  setMeasuredSpeed(undefined);
+                  setMeasuredExecutionMode(undefined);
+                  setBenchmarkStatus('');
+                }}
+              >
                 Switch to a downloadable voice
               </button>
             </div>
@@ -601,7 +750,10 @@ export function AudiobookExportDialog({ story, currentChapterIndex, speed, volum
           {voiceSelected && (
             <div className="audiobook-voice-note">
               <span className="downloadable-badge">DOWNLOADABLE</span>
-              <span>Voice model · about {formatBytes(PIPER_VOICE.modelBytes)} stored on this device</span>
+              <span>
+                {selectedVoice?.tier === 'fast' ? 'Fast · medium-quality voice' : 'High-quality voice'} · about{' '}
+                {formatBytes(selectedVoice?.modelBytes ?? 0)} stored on this device
+              </span>
               <p>
                 Generation speed varies by device. The voice model downloads from a public open-source model
                 host.
@@ -646,7 +798,15 @@ export function AudiobookExportDialog({ story, currentChapterIndex, speed, volum
             className="text-action"
             type="button"
             onClick={() => void measureDevice()}
-            disabled={busy || !voiceSelected}
+            disabled={
+              busy ||
+              !voiceSelected ||
+              selected.flatMap((chapterIndex) =>
+                story.chapters[chapterIndex]?.paragraphs.flatMap((paragraph) =>
+                  splitSentences(paragraph.text),
+                ) ?? [],
+              ).length < 5
+            }
           >
             {busy ? benchmarkStatus || 'Working…' : 'Measure generation speed on this device'}
           </button>
@@ -664,7 +824,12 @@ export function AudiobookExportDialog({ story, currentChapterIndex, speed, volum
               max="2"
               step="0.05"
               value={exportSpeed}
-              onChange={(event) => setExportSpeed(Number(event.target.value))}
+              onChange={(event) => {
+                setExportSpeed(Number(event.target.value));
+                setMeasuredSpeed(undefined);
+                setMeasuredExecutionMode(undefined);
+                setBenchmarkStatus('');
+              }}
               aria-label="Export narration speed"
             />
           </label>
@@ -704,6 +869,48 @@ export function AudiobookExportDialog({ story, currentChapterIndex, speed, volum
               aria-label="Pause between chapters"
             />
           </label>
+
+          <details className="audiobook-advanced">
+            <summary>Advanced engine options</summary>
+            <label className="audiobook-field">
+              <span>Synthesis workers</span>
+              <select
+                value={workerCount}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setWorkerCount(value === 'auto' ? 'auto' : (Number(value) as 1 | 2 | 3 | 4));
+                  setMeasuredSpeed(undefined);
+                  setMeasuredExecutionMode(undefined);
+                  setBenchmarkStatus('');
+                }}
+              >
+                <option value="auto">Auto · memory-aware</option>
+                <option value="1">1 worker · lowest memory use</option>
+                <option value="2">2 workers</option>
+                <option value="3">3 workers</option>
+                <option value="4">4 workers · highest memory use</option>
+              </select>
+            </label>
+            <label className="audiobook-field">
+              <span>Inference engine</span>
+              <select
+                value={executionMode}
+                onChange={(event) => {
+                  setExecutionMode(event.target.value as PiperExecutionMode);
+                  setMeasuredSpeed(undefined);
+                  setMeasuredExecutionMode(undefined);
+                  setBenchmarkStatus('');
+                }}
+              >
+                <option value="auto">Auto · benchmark available engines</option>
+                <option value="cpu">CPU · WebAssembly</option>
+                {gpuAvailable && <option value="gpu">GPU · WebGPU</option>}
+              </select>
+            </label>
+            {!gpuAvailable && (
+              <p className="audiobook-status">WebGPU is not available in this browser.</p>
+            )}
+          </details>
 
           <fieldset className="audiobook-chapters">
             <legend>Chapters · {selected.length} selected</legend>
@@ -844,6 +1051,8 @@ export function AudiobookExportDialog({ story, currentChapterIndex, speed, volum
               ? 'Export paused'
               : progress?.state === 'assembling'
                 ? 'Assembling the audiobook…'
+                : progress?.state === 'preparing'
+                  ? 'Preparing the voice engine for this device…'
                 : `Generating audio · ${progress?.completedChunks ?? 0} of ${progress?.totalChunks ?? 0} audio chunks`}
         </p>
         {progress?.state === 'downloading-voice' && progress.voiceTotal ? (
@@ -864,7 +1073,11 @@ export function AudiobookExportDialog({ story, currentChapterIndex, speed, volum
         <div className="audiobook-progress-meta">
           <span>{progress?.percent ?? 0}% complete</span>
           <span>Elapsed {formatDuration((progress?.elapsedMs ?? 0) / 1_000)}</span>
-          <span>About {formatDuration(progress?.etaSeconds ?? generationSeconds)} remaining</span>
+          <span>
+            {progress && progress.completedChunks >= 5
+              ? `About ${formatDuration(progress.etaSeconds)} remaining`
+              : 'Estimating…'}
+          </span>
         </div>
         <ul className="audiobook-progress-chapters">
           {(
