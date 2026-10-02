@@ -1,0 +1,14 @@
+Private Story Reader is a free, open-source web application for reading documents in a browser and listening to their extracted text. It supports TXT, Markdown, PDF, DOCX and EPUB files, up to 40 MB for local-file selection. PDF text extraction does not include OCR for scanned pages. The project is built with Vite, React and TypeScript.
+
+Local files are processed in the browser. The reader can use speech voices supplied by the browser or operating system for playback; their availability depends on the device, and this speech cannot be exported. Audiobook export is available through Piper voices downloaded from documented public asset hosts. Piper inference runs in browser Web Workers, and the app can export per-chapter MP3 files inside a ZIP, one MP3 with chapter metadata, or WAV. Model assets and active or resumable export data use browser storage. Story text and generated audio from local files are not sent to the reader API or voice asset hosts.
+
+The reader includes chapter navigation, sentence highlighting, pause and resume, playback speed choices, search, device-only bookmarks, reading themes, text sizing, keyboard shortcuts and controls for removing app data. It is not a permanent cloud library or an offline packaged application. First-time voice downloads require a network connection.
+
+OneDrive and SharePoint retrieval is optional and uses a configured delegated Microsoft Graph integration on the server. Account permissions apply, and anonymous public-link resolution is not implemented. With this integration, the link and access token are handled by the API session and document bytes pass through memory. Local file reading does not require Microsoft sign-in.
+
+The repository is licensed under GNU Affero General Public License version 3 or later (AGPL-3.0-or-later). The legal and privacy documents are good-faith source templates and need qualified review before a hosted public launch. The project is not a hosted service or a security-audited service.
+
+Repository: https://github.com/Navaneeth223/link-to-audiobook
+Maintainer contact: navaneethkv.dev@gmail.com
+Privacy documentation: https://github.com/Navaneeth223/link-to-audiobook/blob/main/docs/PRIVACY.md
+Audiobook export documentation: https://github.com/Navaneeth223/link-to-audiobook/blob/main/docs/AUDIOBOOK_EXPORT.md

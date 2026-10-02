@@ -1,2 +1,119 @@
 <!doctype html>
-<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><meta name="theme-color" content="#f7f6f2"/><meta name="description" content="A private, local-first story reader with audiobook playback."/><title>Private Story Reader</title></head><body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body></html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f7f6f2" />
+    <meta name="color-scheme" content="light" />
+    <meta name="author" content="Navaneeth K. V." />
+    <meta name="application-name" content="Private Story Reader" />
+    <meta name="apple-mobile-web-app-title" content="Private Story Reader" />
+    <meta name="format-detection" content="telephone=no" />
+    <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1" />
+    <meta
+      name="description"
+      content="Read and listen to TXT, Markdown, PDF, DOCX and EPUB files privately in your browser. Free and open source, with browser voices and local MP3 or WAV export."
+    />
+    <title>Free Document to Audiobook Reader | Private Story Reader</title>
+    <!-- Canonical and absolute social URLs are added when the production domain is confirmed. -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Private Story Reader" />
+    <meta property="og:title" content="Private Story Reader — Free Document to Audiobook Reader" />
+    <meta
+      property="og:description"
+      content="Turn documents into listening sessions in your browser. Read with browser voices and export local Piper narration as MP3 or WAV."
+    />
+    <meta property="og:image" content="/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Private Story Reader — read and listen to your documents in a quiet, green reading room." />
+    <meta property="og:locale" content="en_US" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Private Story Reader — Free Document to Audiobook Reader" />
+    <meta
+      name="twitter:description"
+      content="Read and listen to TXT, Markdown, PDF, DOCX and EPUB files in your browser, then export local Piper narration as MP3 or WAV."
+    />
+    <meta name="twitter:image" content="/og-image.png" />
+    <meta name="twitter:image:alt" content="Private Story Reader — read and listen to your documents in a quiet, green reading room." />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebSite",
+            "name": "Private Story Reader",
+            "description": "A private, open-source browser reader for local documents, with narration and local audiobook export.",
+            "inLanguage": "en"
+          },
+          {
+            "@type": ["SoftwareApplication", "WebApplication"],
+            "name": "Private Story Reader",
+            "description": "A browser-based document reader that reads TXT, Markdown, PDF, DOCX and EPUB files with browser voices and can export local Piper narration as MP3 or WAV.",
+            "applicationCategory": "MultimediaApplication",
+            "operatingSystem": "Any (web browser)",
+            "browserRequirements": "A modern browser with JavaScript enabled; audiobook export requires browser storage and Web Worker support.",
+            "isAccessibleForFree": true,
+            "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+            "license": "https://www.gnu.org/licenses/agpl-3.0.html",
+            "codeRepository": "https://github.com/Navaneeth223/link-to-audiobook",
+            "sameAs": ["https://github.com/Navaneeth223/link-to-audiobook"],
+            "author": { "@type": "Person", "name": "Navaneeth K. V." },
+            "featureList": [
+              "Read TXT, Markdown, PDF, DOCX and EPUB files in the browser",
+              "Listen using browser or operating system speech voices",
+              "Export local Piper narration as chapter MP3 files in a ZIP, a chapter-marked MP3, or WAV",
+              "Read OneDrive and SharePoint documents through an optional configured Microsoft Graph integration",
+              "Store reading position, bookmarks and audiobook data in browser storage"
+            ]
+          }
+        ]
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>
+      <main>
+        <h1>Private Story Reader: read and listen to your documents</h1>
+        <p>
+          Private Story Reader is a free, open-source browser app for reading TXT, Markdown, PDF, DOCX and EPUB files
+          and listening with voices available in your browser or operating system. Local Piper voices can create MP3
+          or WAV audiobook exports. Local files are parsed in the browser, and generated audio remains in browser storage.
+        </p>
+        <h2>How it works</h2>
+        <ol>
+          <li>Choose a document from your device or provide a OneDrive or SharePoint link.</li>
+          <li>Read the extracted text by chapter or listen with a browser or operating system voice.</li>
+          <li>For audiobook export, choose a Piper voice and save chapter MP3 files in a ZIP, a chapter-marked MP3, or WAV.</li>
+        </ol>
+        <h2>Features</h2>
+        <ul>
+          <li>In-browser text extraction for TXT, Markdown, PDF, DOCX and EPUB files up to 40 MB.</li>
+          <li>Chapter navigation, sentence highlighting, search, bookmarks and reading preferences.</li>
+          <li>Local Piper audiobook export as MP3 or WAV; browser speech voices are for playback and cannot be exported.</li>
+          <li>Optional OneDrive and SharePoint retrieval through a configured, delegated Microsoft Graph API.</li>
+          <li>AGPL-3.0-or-later open-source license.</li>
+        </ul>
+        <h2>Frequently asked questions</h2>
+        <h3>Are my files uploaded?</h3>
+        <p>Files selected from the device are parsed in the browser. OneDrive and SharePoint links use the configured API and Microsoft Graph. Piper narration runs locally after voice assets are downloaded.</p>
+        <h3>Which document formats are supported?</h3>
+        <p>TXT, Markdown, PDF, DOCX and EPUB. Scanned PDFs need OCR, which is not included.</p>
+        <h3>Is it free and open source?</h3>
+        <p>Yes. Private Story Reader is free to use and licensed under AGPL-3.0-or-later.</p>
+        <h3>Does it work offline?</h3>
+        <p>It is not a packaged offline app. Previously downloaded Piper assets are stored locally, but first-time downloads and OneDrive or SharePoint retrieval need a network connection.</p>
+        <h3>Which voices and export formats are available?</h3>
+        <p>Playback uses voices supplied by the browser or operating system. Local Piper voices can export chapter MP3 files in a ZIP, a single chapter-marked MP3, or WAV.</p>
+        <h3>Where can I find the source code?</h3>
+        <p><a href="https://github.com/Navaneeth223/link-to-audiobook">Private Story Reader on GitHub</a></p>
+      </main>
+    </noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

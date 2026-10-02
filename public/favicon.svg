@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Private Story Reader audio lines mark">
+  <circle cx="16" cy="16" r="16" fill="#294f3e"/>
+  <g fill="none" stroke="#f8f6f0" stroke-linecap="round" stroke-width="1.65">
+    <path d="M7.5 12.5v7M11.5 9.5v13M15.5 13v6M19.5 8.5v15M23.5 12v8"/>
+  </g>
+</svg>

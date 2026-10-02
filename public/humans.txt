@@ -1,0 +1,9 @@
+/* TEAM */
+Maintainer: Navaneeth K. V.
+Contact: navaneethkv.dev@gmail.com
+Project: Private Story Reader
+
+/* SITE */
+Built with Vite, React and TypeScript.
+Source: https://github.com/Navaneeth223/link-to-audiobook
+License: AGPL-3.0-or-later

@@ -1,0 +1,26 @@
+# Private Story Reader
+
+Private Story Reader is a free, open-source browser app for reading local documents and listening with browser or operating-system speech voices. Audiobook export can use locally downloaded Piper voices and runs synthesis in browser workers.
+
+## Key facts
+
+- License: AGPL-3.0-or-later.
+- Repository: https://github.com/Navaneeth223/link-to-audiobook
+- Maintainer contact: navaneethkv.dev@gmail.com
+- Local files are parsed in the browser; story text and generated audio are not sent to Piper asset hosts or the reader API during local-file use.
+- OneDrive and SharePoint retrieval uses an optional configured server-side Microsoft Graph integration; anonymous public-link resolution is not implemented.
+- Browser and operating-system speech voices are used for playback and cannot be exported.
+
+## Features
+
+- In-browser extraction of TXT, Markdown, PDF, DOCX and EPUB documents (40 MB local-file limit; scanned-PDF OCR is not included).
+- Chapter navigation, sentence highlighting, search, bookmarks, reading themes and text sizing.
+- Piper audiobook export as per-chapter MP3 files in a ZIP, one chapter-marked MP3, or WAV.
+- Optional delegated Microsoft Graph retrieval for OneDrive and SharePoint links.
+
+## Project documentation
+
+- [Privacy policy source](https://github.com/Navaneeth223/link-to-audiobook/blob/main/docs/PRIVACY.md)
+- [Audiobook export documentation](https://github.com/Navaneeth223/link-to-audiobook/blob/main/docs/AUDIOBOOK_EXPORT.md)
+- [Deployment guide](https://github.com/Navaneeth223/link-to-audiobook/blob/main/docs/DEPLOYMENT.md)
+- [Full AI-oriented description](./llms-full.txt)
