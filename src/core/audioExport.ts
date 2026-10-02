@@ -14,7 +14,12 @@ export type AudioExportSettings = {
   chapters: number[];
 };
 export type ExportMetadata = { title: string; author: string; voice: string; albumTitle?: string };
-export type TextAudioChunk = { text: string; endsParagraph: boolean };
+export type TextAudioChunk = {
+  text: string;
+  endsParagraph: boolean;
+  paragraphIndex: number;
+  sentenceIndex: number;
+};
 
 const WAV_SAMPLE_RATE = 24_000;
 const NORMALIZED_RMS = 0.12;
@@ -23,21 +28,26 @@ const MAX_SYNTHESIS_CHARS = 380;
 
 export function createSentenceChunks(paragraphs: Paragraph[]): TextAudioChunk[] {
   const chunks: TextAudioChunk[] = [];
-  for (const paragraph of paragraphs) {
+  for (const [paragraphIndex, paragraph] of paragraphs.entries()) {
     const sentences = splitSentences(paragraph.text);
-    const paragraphChunks: string[] = [];
-    for (const sentence of sentences) {
+    const paragraphChunks: Array<{ text: string; sentenceIndex: number }> = [];
+    for (const [sentenceIndex, sentence] of sentences.entries()) {
       let remaining = sentence.trim();
       while (remaining.length > MAX_SYNTHESIS_CHARS) {
         let splitAt = remaining.lastIndexOf(' ', MAX_SYNTHESIS_CHARS);
         if (splitAt < 1) splitAt = MAX_SYNTHESIS_CHARS;
-        paragraphChunks.push(remaining.slice(0, splitAt).trim());
+        paragraphChunks.push({ text: remaining.slice(0, splitAt).trim(), sentenceIndex });
         remaining = remaining.slice(splitAt).trim();
       }
-      if (remaining) paragraphChunks.push(remaining);
+      if (remaining) paragraphChunks.push({ text: remaining, sentenceIndex });
     }
-    for (const [index, text] of paragraphChunks.entries()) {
-      chunks.push({ text, endsParagraph: index === paragraphChunks.length - 1 });
+    for (const [index, chunk] of paragraphChunks.entries()) {
+      chunks.push({
+        text: chunk.text,
+        endsParagraph: index === paragraphChunks.length - 1,
+        paragraphIndex,
+        sentenceIndex: chunk.sentenceIndex,
+      });
     }
   }
   return chunks;

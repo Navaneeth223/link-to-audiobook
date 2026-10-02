@@ -40,6 +40,8 @@ type WorkerResponse =
       durationSeconds: number;
       sizeBytes: number;
       savedDirectly: boolean;
+      skippedSentenceCount: number;
+      skippedSentenceWarnings: string[];
       previewFileName?: string;
     }
   | { type: 'cancelled' }
@@ -948,6 +950,15 @@ export function AudiobookExportDialog({ story, currentChapterIndex, speed, volum
             ? `Saved to ${savedLocationName || result.fileName}`
             : `${result.fileName} · ${formatBytes(result.sizeBytes)}`}
         </p>
+        {result.skippedSentenceCount > 0 && (
+          <div className="audiobook-error" role="status">
+            <p>
+              {result.skippedSentenceCount} sentence{result.skippedSentenceCount === 1 ? '' : 's'} could not
+              be spoken.
+            </p>
+            <p>Skipped positions: {result.skippedSentenceWarnings.join('; ')}.</p>
+          </div>
+        )}
         {error && (
           <p className="audiobook-error" role="alert">
             {error}

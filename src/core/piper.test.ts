@@ -3,8 +3,10 @@ import {
   piperLengthScale,
   decodePiperWav,
   pinnedPiperModelUrl,
+  filterPiperPhonemeIds,
   PiperSpeechProvider,
   PIPER_VOICE,
+  sanitizeSpeechInput,
   type PiperWorkerPort,
   type PiperWorkerRequest,
   type PiperWorkerResponse,
@@ -99,6 +101,23 @@ describe('Piper speech engine', () => {
     expect(piperLengthScale(1.05, 0.5)).toBe(2.1);
     expect(piperLengthScale(1.05, 1)).toBe(1.05);
     expect(() => piperLengthScale(1.05, 3)).toThrow(/speed/u);
+  });
+
+  it('sanitizes speech-only Unicode/PDF artifacts while preserving spoken text', () => {
+    const source = 'The ﬁle—“quoted”\u00ad text\u200b.\nA\u00a0second line\uFFFD.';
+    expect(sanitizeSpeechInput(source)).toBe('The file-"quoted" text. A second line.');
+    expect(source).toContain('\u00ad');
+  });
+
+  it('drops phoneme IDs outside the loaded voice map before ONNX inference', () => {
+    const voiceMap = Object.fromEntries(
+      Array.from({ length: 130 }, (_, id) => [`symbol-${id}`, [id]]),
+    );
+    const reportedGatherFailure = { sentence: 'Unusual input phrase.', phonemeIds: [1, 14, 144, 129, 130] };
+    expect(filterPiperPhonemeIds(reportedGatherFailure.phonemeIds, voiceMap)).toEqual({
+      ids: [1, 14, 129],
+      dropped: 2,
+    });
   });
 
   it('returns synthesized PCM from its worker, applies volume and forwards download progress', async () => {

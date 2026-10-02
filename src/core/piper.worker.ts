@@ -7,7 +7,9 @@ import {
   PIPER_PHONEMIZER_VERSION,
   PIPER_STORAGE_DIRECTORY,
   PIPER_VOICE,
+  filterPiperPhonemeIds,
   pinnedPiperModelUrl,
+  sanitizeSpeechInput,
   type PiperWorkerRequest,
   type PiperWorkerResponse,
 } from './piper';
@@ -26,6 +28,8 @@ const piperWasmBase = `https://cdn.jsdelivr.net/npm/@diffusionstudio/piper-wasm@
 const controllers = new Map<number, AbortController>();
 let piperSession: import('@mintplex-labs/piper-tts-web').TtsSession | undefined;
 let sessionSpeed: number | undefined;
+let validPhonemeIds = new Set<number>();
+let phonemeGuardInstalled = false;
 
 const nativeFetch = scope.fetch.bind(scope);
 scope.fetch = (input, init) => {
@@ -215,6 +219,17 @@ async function getSession(
     ...config,
     inference: { ...inference, length_scale: piperLengthScale(baseLengthScale, speed) },
   };
+  const phonemeMap = config.phoneme_id_map;
+  if (!phonemeMap || typeof phonemeMap !== 'object') {
+    throw new Error('synthesis-input-invalid');
+  }
+  validPhonemeIds = new Set(
+    Object.values(phonemeMap as Record<string, unknown>)
+      .filter(Array.isArray)
+      .flatMap((ids) => ids.filter((id): id is number => typeof id === 'number' && Number.isInteger(id))),
+  );
+  if (!validPhonemeIds.size) throw new Error('synthesis-input-invalid');
+  await installPhonemeGuard();
   await writeJsonFile(directory, modelFiles[1].name, configured);
   try {
     const { TtsSession } = await import('@mintplex-labs/piper-tts-web');
@@ -234,6 +249,39 @@ async function getSession(
   return piperSession;
 }
 
+async function installPhonemeGuard(): Promise<void> {
+  if (phonemeGuardInstalled) return;
+  const module = await import('onnxruntime-web/wasm');
+  const runtime = 'default' in module && module.default ? module.default : module;
+  type RuntimeFeeds = Record<string, import('onnxruntime-web/wasm').Tensor>;
+  type RuntimeRun = (
+    feeds: RuntimeFeeds,
+    fetchesOrOptions?: unknown,
+    options?: unknown,
+  ) => Promise<unknown>;
+  const sessionFactory = runtime.InferenceSession as typeof runtime.InferenceSession & {
+    prototype: { run: RuntimeRun };
+  };
+  const originalRun = sessionFactory.prototype.run;
+  sessionFactory.prototype.run = function (this: object, feeds, fetchesOrOptions, options) {
+    const input = feeds.input;
+    if (!input || input.type !== 'int64') {
+      return originalRun.call(this, feeds, fetchesOrOptions, options);
+    }
+    const rawIds = Array.from(input.data as BigInt64Array, Number);
+    const { ids, dropped } = filterPiperPhonemeIds(rawIds, validPhonemeIds);
+    if (!ids.length) throw new Error('synthesis-input-invalid');
+    if (!dropped) return originalRun.call(this, feeds, fetchesOrOptions, options);
+    const safeFeeds = {
+      ...feeds,
+      input: new runtime.Tensor('int64', ids, [1, ids.length]),
+      input_lengths: new runtime.Tensor('int64', [ids.length]),
+    };
+    return originalRun.call(this, safeFeeds, fetchesOrOptions, options);
+  };
+  phonemeGuardInstalled = true;
+}
+
 function friendlyError(error: unknown): string {
   if (error instanceof DOMException && error.name === 'AbortError')
     return 'The voice operation was cancelled.';
@@ -241,7 +289,25 @@ function friendlyError(error: unknown): string {
     return 'Not enough free space to download this voice.';
   if (error instanceof Error && error.message === 'voice-size-mismatch')
     return 'The downloaded voice file was incomplete. Please try again.';
-  return 'The downloadable voice could not be prepared. Check your connection and available storage, then try again.';
+  if (error instanceof Error && error.message === 'voice-download-failed')
+    return 'The voice download failed. Check your connection, then try again.';
+  if (error instanceof Error && error.message === 'synthesis-input-invalid')
+    return 'This passage contains characters that this voice cannot process.';
+  if (
+    error instanceof Error &&
+    /(?:out of memory|memory allocation|allocation failed)/iu.test(error.message)
+  ) {
+    return 'There is not enough memory to synthesize this passage. Close other tabs or export fewer chapters.';
+  }
+  if (
+    error instanceof DOMException &&
+    (error.name === 'QuotaExceededError' || error.name === 'NotAllowedError')
+  ) {
+    return 'The browser could not store the voice files. Check available storage and site permissions.';
+  }
+  if (error instanceof Error && /(?:network|fetch|http)/iu.test(error.message))
+    return 'The voice files could not be downloaded. Check your connection, then try again.';
+  return 'The voice could not synthesize this passage. The export will try a shorter sentence.';
 }
 
 async function handleRequest(request: PiperWorkerRequest): Promise<void> {
@@ -271,7 +337,9 @@ async function handleRequest(request: PiperWorkerRequest): Promise<void> {
       post({ requestId: request.requestId, type: 'done' });
     } else if (request.type === 'synthesize') {
       const session = await getSession(request.requestId, controller.signal, request.speed);
-      const wav = await session.predict(request.text);
+      const text = sanitizeSpeechInput(request.text);
+      if (!text) throw new Error('synthesis-input-invalid');
+      const wav = await session.predict(text);
       const { decodePiperWav } = await import('./piper');
       const audio = decodePiperWav(await wav.arrayBuffer());
       const buffer = audio.samples.buffer;

@@ -118,6 +118,51 @@ export function piperLengthScale(baseLengthScale: number, speed: number): number
   return baseLengthScale / speed;
 }
 
+const piperLigatures: Record<string, string> = {
+  '\u00c6': 'AE',
+  '\u00e6': 'ae',
+  '\u0152': 'OE',
+  '\u0153': 'oe',
+  '\u0132': 'IJ',
+  '\u0133': 'ij',
+  '\u014a': 'N',
+  '\u014b': 'n',
+  '\ufb00': 'ff',
+  '\ufb01': 'fi',
+  '\ufb02': 'fl',
+  '\ufb03': 'ffi',
+  '\ufb04': 'ffl',
+  '\ufb05': 'st',
+  '\ufb06': 'st',
+};
+
+export function sanitizeSpeechInput(text: string): string {
+  return text
+    .normalize('NFKC')
+    .replace(/[ÆæŒœĲĳŊŋﬀﬁﬂﬃﬄﬅﬆ]/gu, (character) => piperLigatures[character] ?? character)
+    .replace(/[‘’‚‛]/gu, "'")
+    .replace(/[“”„‟]/gu, '"')
+    .replace(/[‐‑‒–—―]/gu, '-')
+    .replace(/\u2026/gu, '...')
+    .replace(/[\u00ad\ufffd\p{Cf}]/gu, '')
+    .replace(/\p{Cc}/gu, (character) => (character === '\n' || character === '\r' || character === '\t' ? ' ' : ''))
+    .replace(/-\s*\n\s*/gu, '')
+    .replace(/\s+/gu, ' ')
+    .trim();
+}
+
+export function filterPiperPhonemeIds(
+  ids: readonly number[],
+  phonemeIdMap: Record<string, number[]> | ReadonlySet<number>,
+): { ids: number[]; dropped: number } {
+  const allowedIds =
+    phonemeIdMap instanceof Set
+      ? phonemeIdMap
+      : new Set(Object.values(phonemeIdMap).flat().filter(Number.isInteger));
+  const filtered = ids.filter((id) => allowedIds.has(id));
+  return { ids: filtered, dropped: ids.length - filtered.length };
+}
+
 export type PiperWorkerCommand =
   | { type: 'status' }
   | { type: 'download' }
@@ -168,8 +213,8 @@ export class PiperSpeechProvider implements SampleSpeechProvider {
   private createWorker(): PiperWorkerPort {
     const worker = this.workerFactory();
     worker.onmessage = (event) => this.receive(event.data);
-    worker.onerror = (event) => {
-      this.failAll(new Error(event.message || 'The downloadable voice worker stopped.'));
+    worker.onerror = () => {
+      this.failAll(new Error('The voice worker crashed during synthesis. You can resume the export and retry.'));
       worker.terminate();
       this.disposed = true;
     };

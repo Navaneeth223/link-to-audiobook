@@ -201,6 +201,8 @@ const mockExportWorker = async (
               durationSeconds: 2,
               sizeBytes: 17,
               savedDirectly: false,
+              skippedSentenceCount: 0,
+              skippedSentenceWarnings: [],
             },
           } as MessageEvent);
         }

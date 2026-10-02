@@ -18,6 +18,7 @@ export type AudioExportManifest = {
   settings: AudioExportSettings;
   metadata: ExportMetadata;
   chapters: ExportChapterManifest[];
+  skippedSentences?: Array<{ chapterIndex: number; paragraphIndex: number; sentenceIndex: number }>;
   state: 'generating' | 'paused' | 'interrupted' | 'complete';
   updatedAt: number;
 };
@@ -90,6 +91,18 @@ export function isAudioExportManifest(value: unknown, expectedJobId?: string): v
             Number.isFinite(chapter.durationSeconds) &&
             chapter.durationSeconds >= 0)),
     ) &&
+    (manifest.skippedSentences === undefined ||
+      (Array.isArray(manifest.skippedSentences) &&
+        manifest.skippedSentences.every(
+          (warning) =>
+            warning &&
+            Number.isInteger(warning.chapterIndex) &&
+            warning.chapterIndex >= 0 &&
+            Number.isInteger(warning.paragraphIndex) &&
+            warning.paragraphIndex >= 0 &&
+            Number.isInteger(warning.sentenceIndex) &&
+            warning.sentenceIndex >= 0,
+        ))) &&
     (manifest.state === 'generating' ||
       manifest.state === 'paused' ||
       manifest.state === 'interrupted' ||
@@ -114,7 +127,13 @@ export function friendlyExportStorageError(error: unknown): Error {
     'A saved audiobook export no longer matches these chapters or settings. Start a new export.',
     'Not enough free space for this audiobook export. Clear cached audio or select fewer chapters.',
     'The browser does not support the local storage needed for audiobook export.',
-    'The downloadable voice could not be prepared. Check your connection and available storage, then try again.',
+    'The voice download failed. Check your connection, then try again.',
+    'Not enough free space to download this voice.',
+    'The browser could not store the voice files. Check available storage and site permissions.',
+    'There is not enough memory to synthesize this passage. Close other tabs or export fewer chapters.',
+    'This passage contains characters that this voice cannot process.',
+    'The voice could not synthesize this passage. The export will try a shorter sentence.',
+    'The voice worker crashed during synthesis. You can resume the export and retry.',
     'A saved audiobook audio chunk is damaged. Remove cached audio and try again.',
     'A saved audiobook audio chunk has an unsupported format.',
     'A chapter is not ready to assemble. Resume the export to finish it.',

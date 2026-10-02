@@ -19,6 +19,7 @@ import {
   type ExportMetadata,
   type TextAudioChunk,
 } from './audioExport';
+import { synthesizeWithRecovery } from './audioSynthesis';
 import {
   AudioExportStore,
   friendlyExportStorageError,
@@ -63,6 +64,8 @@ type WorkerResponse =
       durationSeconds: number;
       sizeBytes: number;
       savedDirectly: boolean;
+      skippedSentenceCount: number;
+      skippedSentenceWarnings: string[];
     }
   | { type: 'cancelled' }
   | { type: 'error'; message: string };
@@ -209,7 +212,8 @@ async function cachedOrSynthesize(
   text: string,
   fingerprint: string,
   speed: number,
-): Promise<{ audio: PcmAudio; key: string }> {
+  sentenceIndex: number,
+): Promise<{ audio: PcmAudio; key: string; skippedSentenceIndexes: number[] }> {
   const key = await audioCacheKey({
     documentFingerprint: fingerprint,
     provider: `piper-wasm@${PIPER_MODEL_COMMIT}`,
@@ -218,24 +222,13 @@ async function cachedOrSynthesize(
     text,
   });
   const cached = await store.readPcm(key);
-  if (cached) return { audio: cached, key };
-  let lastError: unknown;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    if (job.cancelled) throw new DOMException('The export was cancelled.', 'AbortError');
-    try {
-      const audio = normalizePcm(await provider.synthesize(text));
-      if (!audio.samples.length) throw new Error('The voice engine returned an empty audio chunk.');
-      await store.writePcm(key, audio);
-      return { audio, key };
-    } catch (error) {
-      lastError = error;
-      if (error instanceof DOMException && error.name === 'AbortError') throw error;
-      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt));
-    }
-  }
-  throw lastError instanceof Error
-    ? lastError
-    : new Error('A passage could not be generated after several tries.');
+  if (cached) return { audio: cached, key, skippedSentenceIndexes: [] };
+  if (job.cancelled) throw new DOMException('The export was cancelled.', 'AbortError');
+  const result = await synthesizeWithRecovery(provider, text, PIPER_VOICE.sampleRate, sentenceIndex);
+  const audio = normalizePcm(result.audio);
+  if (!audio.samples.length) throw new Error('The voice engine returned an empty audio chunk.');
+  if (!result.skippedSentenceIndexes.length) await store.writePcm(key, audio);
+  return { audio, key, skippedSentenceIndexes: result.skippedSentenceIndexes };
 }
 
 function createManifest(
@@ -258,6 +251,7 @@ function createManifest(
       chunkKeys: chunks.map(() => ''),
       chunkEndsParagraph: chunks.map((chunk) => chunk.endsParagraph),
     })),
+    skippedSentences: [],
     state: 'generating',
     updatedAt: Date.now(),
   };
@@ -319,7 +313,32 @@ async function writeAudioChunks(
     for (const [chunkIndex, chunk] of chunks.entries()) {
       await waitForResume(job);
       if (job.cancelled) throw new DOMException('The export was cancelled.', 'AbortError');
-      const cached = await cachedOrSynthesize(job, provider, chunk.text, fingerprint, settings.speed);
+      const cached = await cachedOrSynthesize(
+        job,
+        provider,
+        chunk.text,
+        fingerprint,
+        settings.speed,
+        chunk.sentenceIndex,
+      );
+      for (const sentenceIndex of cached.skippedSentenceIndexes) {
+        const skipped = {
+          chapterIndex,
+          paragraphIndex: chunk.paragraphIndex,
+          sentenceIndex,
+        };
+        const skippedSentences = (job.manifest!.skippedSentences ??= []);
+        if (
+          !skippedSentences.some(
+            (entry) =>
+              entry.chapterIndex === skipped.chapterIndex &&
+              entry.paragraphIndex === skipped.paragraphIndex &&
+              entry.sentenceIndex === skipped.sentenceIndex,
+          )
+        ) {
+          skippedSentences.push(skipped);
+        }
+      }
       let audio = resamplePcm(cached.audio, settings.format === 'wav' ? WAV_RATE : PIPER_VOICE.sampleRate);
       audio = fadePcmBoundaries(audio);
       const key = cached.key;
@@ -649,6 +668,11 @@ async function runExport(message: StartMessage, job: ActiveJob): Promise<void> {
     durationSeconds: totalDuration,
     sizeBytes: output.sizeBytes,
     savedDirectly: output.savedDirectly,
+    skippedSentenceCount: manifest.skippedSentences?.length ?? 0,
+    skippedSentenceWarnings: (manifest.skippedSentences ?? []).map(({ chapterIndex, paragraphIndex }) => {
+      const chapterTitle = chapterPlans[chapterIndex]?.chapter.title ?? 'Selected chapter';
+      return `${chapterTitle}, paragraph ${paragraphIndex + 1}`;
+    }),
   });
 }
 

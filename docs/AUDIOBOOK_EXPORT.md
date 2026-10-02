@@ -16,6 +16,16 @@ browser muxer is not implemented. Files include title, author, voice, and “Gen
 metadata. The selected text and generated audio are not sent to a server; downloading the model and runtime
 does make ordinary requests to their pinned public hosts.
 
+Speech input is normalized immediately before synthesis (Unicode compatibility forms, ligatures, smart
+punctuation, invisible/control characters, soft hyphens, replacement characters, and whitespace). The
+displayed story, stored document, fingerprint, and reader position are not changed. The loaded voice config's
+`phoneme_id_map` is the allowed ID set; phoneme IDs are filtered against it before every ONNX inference call.
+The pinned LibriTTS config has 130 IDs, numbered 0–129; this prevents out-of-range phonemizer output such as
+Gather index 144 from reaching the model embedding. If a chunk still fails, it is retried as sentences once.
+An individual failed sentence becomes 350 ms of silence and is reported by chapter and paragraph in the
+finished dialog; the warning contains no story text. Out-of-memory, storage/download, synthesis-input, and
+worker-crash errors are reported separately.
+
 The dialog supports selecting all chapters, a subset, or the current chapter, and editing the title and author.
 It honors the selected narration speed and volume and inserts actual silence between paragraphs and chapters.
 Pitch and pronunciation dictionaries are not available in the current reader. It estimates audio duration,
@@ -52,10 +62,12 @@ possible.
 
 There is no fixed generation speed. The current Piper voice uses ONNX Runtime Web/WASM and Piper phonemization;
 this implementation does not select a WebGPU backend. Speed varies with processor, memory pressure, browser,
-thermal throttling, and voice settings. No measured benchmark is reported for this development machine because
-the model was not downloaded or run here; the model alone is approximately 137 MB, exceeding the local free
-space recorded during implementation. Do not treat the rough default estimate or any other device's benchmark
-as a promise.
+thermal throttling, and voice settings. A first headed Chromium smoke test produced and decoded a 3.81-second
+MP3 in 94.76 seconds end-to-end (real-time factor 0.040, about 24.8× slower than playback). This cold run
+includes application startup, the approximately 137 MB model download, runtime/model initialization, synthesis,
+encoding, and audio decoding; it is not an inference-only benchmark. A repeat headed run after download took
+about 1.2 minutes overall. Step 2 still needs to measure warmed inference after removing one-time preparation
+and comparing thread/backend configurations. Do not treat this one cold-device measurement as a promise.
 
 The user must remain on the page while generation is active. A screen wake lock is requested where available,
 but browsers can deny it or suspend a background tab. Battery-saver mode is not detected. The voice model is
