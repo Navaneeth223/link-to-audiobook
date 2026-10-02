@@ -217,6 +217,18 @@ export function AudiobookExportDialog({ story, currentChapterIndex, speed, volum
     setView(null);
   }, []);
 
+  const closeFinishedExport = useCallback(async () => {
+    try {
+      if (result) await new AudioExportStore().deleteJob(result.jobId);
+      setError('');
+      clearGeneratedAudio();
+    } catch {
+      setError(
+        'Temporary export files could not be removed. Use Delete generated audio or Clear everything to try again.',
+      );
+    }
+  }, [clearGeneratedAudio, result]);
+
   useEffect(() => registerGeneratedAudioCleanup(clearGeneratedAudio), [clearGeneratedAudio]);
 
   const closeWorker = () => {
@@ -284,7 +296,8 @@ export function AudiobookExportDialog({ story, currentChapterIndex, speed, volum
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
-        setView(null);
+        if (view === 'finished') void closeFinishedExport();
+        else setView(null);
         return;
       }
       if (event.key !== 'Tab') return;
@@ -305,7 +318,7 @@ export function AudiobookExportDialog({ story, currentChapterIndex, speed, volum
       document.removeEventListener('keydown', handleKeyDown);
       previousFocus?.focus();
     };
-  }, [view]);
+  }, [closeFinishedExport, view]);
 
   const acquireWakeLock = async () => {
     if (!('wakeLock' in navigator)) return;
@@ -473,6 +486,17 @@ export function AudiobookExportDialog({ story, currentChapterIndex, speed, volum
       setView('configure');
     } catch {
       setError('Some generated audio could not be removed. Use Clear everything to try again.');
+    }
+  };
+
+  const exportAnotherFormat = async () => {
+    try {
+      if (result) await new AudioExportStore().deleteJob(result.jobId, false);
+      setError('');
+      clearGeneratedAudio();
+      setView('configure');
+    } catch {
+      setError('The previous temporary files could not be removed. Delete generated audio or Clear everything before continuing.');
     }
   };
 
@@ -913,7 +937,7 @@ export function AudiobookExportDialog({ story, currentChapterIndex, speed, volum
           <button
             className="icon-button"
             type="button"
-            onClick={() => setView(null)}
+            onClick={() => void closeFinishedExport()}
             aria-label="Close finished export"
           >
             <X size={18} />
@@ -924,6 +948,11 @@ export function AudiobookExportDialog({ story, currentChapterIndex, speed, volum
             ? `Saved to ${savedLocationName || result.fileName}`
             : `${result.fileName} · ${formatBytes(result.sizeBytes)}`}
         </p>
+        {error && (
+          <p className="audiobook-error" role="alert">
+            {error}
+          </p>
+        )}
         <button
           className="secondary-button audiobook-preview"
           type="button"
@@ -938,13 +967,13 @@ export function AudiobookExportDialog({ story, currentChapterIndex, speed, volum
           </a>
         )}
         <div className="dialog-footer audiobook-footer">
-          <button className="secondary-button" type="button" onClick={() => setView('configure')}>
+          <button className="secondary-button" type="button" onClick={() => void exportAnotherFormat()}>
             Export another format
           </button>
           <button className="danger-button" type="button" onClick={() => void removeGeneratedAudio()}>
             Delete generated audio
           </button>
-          <button className="primary-button" type="button" onClick={() => setView(null)}>
+          <button className="primary-button" type="button" onClick={() => void closeFinishedExport()}>
             <Check size={15} /> Done
           </button>
         </div>

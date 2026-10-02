@@ -347,7 +347,7 @@ test('mocked ZIP export downloads the assembled archive, not its preview chapter
   await page.getByRole('button', { name: 'Reader settings' }).click();
   await page.getByRole('button', { name: 'Review saved data' }).click();
   const storedData = page.getByRole('dialog', { name: 'Stored reader data' });
-  await expect(storedData).toContainText('Audiobook export · complete');
+  await expect(storedData).not.toContainText('Audiobook export · complete');
   await storedData.getByRole('button', { name: 'Clear everything' }).click();
   await expect(storedData.getByRole('status')).toContainText('Clear request finished');
   const exportsDirectoryExists = await page.evaluate(async () => {

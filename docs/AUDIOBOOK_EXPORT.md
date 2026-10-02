@@ -26,10 +26,13 @@ Exports are limited to 10 estimated hours per job. MP3 chapter files and interme
 where the File System Access API is supported, the final result can be streamed directly to a user-selected
 file. Other browsers use OPFS and a local download link. A matching interrupted job can be restored from its
 saved settings and resumed from cached chunks. Pause/resume, cancel, retry, a screen wake lock where available,
-and per-chunk progress are implemented. A completed output and resumable chunks remain on this origin until
-the user deletes that export, clears cached audio, or clears everything. The data viewer provides per-export
-deletion. Clear everything also attempts to remove the downloaded Piper model and reports whether storage
-cleanup succeeded.
+and per-chunk progress are implemented. The completed output and resumable chunks remain in OPFS only while
+the finished dialog is open so the user can download and preview without buffering the whole book in memory.
+Closing the dialog, choosing **Done**, or choosing **Delete generated audio** removes the export and its
+unshared PCM cache. **Export another format** removes the previous output but keeps reusable chunks during the
+next export. Cancelled exports are removed. Clear cached audio and Clear everything also remove audiobook
+cache data; Clear everything attempts to remove the downloaded Piper model and reports whether storage cleanup
+succeeded. Files explicitly saved or downloaded by the user remain under their control.
 
 ## Formats, size, and memory
 
@@ -77,8 +80,9 @@ must not be presented as a guarantee.
 
 Story text is passed to a local Web Worker for synthesis and is not written into the export manifest. The cache
 key is a one-way digest derived from the document fingerprint, voice/provider, speed, and chunk text; the stored
-audio chunks are local OPFS files. The manifest stores only settings, document fingerprint, chapter identifiers
-and labels, timestamps, and completed chunk references. Model and runtime downloads are the only network
+audio chunks are local OPFS files only while an export is active, resumable, or its finished dialog is open.
+The manifest stores only settings, document fingerprint, chapter identifiers and labels, timestamps, and
+completed chunk references. Model and runtime downloads are the only network
 requests introduced by export; no story text or generated audio is sent over the network.
 
 The interface displays and requires acceptance of: “For personal listening. You are responsible for having the
