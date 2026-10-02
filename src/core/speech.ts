@@ -3,6 +3,16 @@ export interface SpeechProvider {
   getVolume(): number;
 }
 
+export type PcmAudio = {
+  samples: Float32Array;
+  sampleRate: number;
+  channels: number;
+};
+
+export interface SampleSpeechProvider extends SpeechProvider {
+  synthesize(text: string, onProgress?: (loaded: number, total: number) => void): Promise<PcmAudio>;
+}
+
 export function clampVolume(value: number): number {
   return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0;
 }

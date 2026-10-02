@@ -14,6 +14,8 @@ A local first audiobook style reader for documents you already have permission t
 - Bookmarks use content-derived locators (not story text), support rename/delete and JSON export/import for the matching document.
 - App volume and mute preferences persist on this device. Sentence stepping stays in the player row; paragraph and chapter jumps are grouped under **More skip options**.
 - In-app policies and a device-data viewer support per-item removal and a **Clear everything** action with a report for local data and Microsoft session logout.
+- **Download audiobook** exports selected chapters as MP3 chapter files in a ZIP, one MP3 with ID3 chapter metadata, or 24 kHz/16-bit mono WAV. Export uses a downloadable Piper voice in a browser Web Worker; the browser/OS speech voice cannot be exported. The first use downloads a roughly 137 MB voice model from the pinned public host.
+- Audiobook synthesis, encoding, chapter files, and resumable state stay in browser storage; the story text and generated audio are not sent to a server. Exports are limited to an estimated 10 hours per job. Remove generated audio, clear cached audio, and clear everything are available in the device-data viewer.
 - Playback position is stored as chapter and paragraph indices in local storage. The story contents are not stored there.
 - 40 MB upload limit.
 
@@ -36,19 +38,21 @@ Open the local URL printed by Vite. For Microsoft Graph, copy `.env.example` to 
 ## Commands
 
 ```sh
-npm run check   # strict TypeScript project check
-npm test        # unit tests
-npm run build   # type check and production build
+npm run check       # strict typecheck, lint, and unit tests
+npm run test:e2e    # production build and Chromium Playwright suite
+npm run test:visual # production build and responsive visual smoke checks
+npm run build       # typecheck and production build
 ```
 
 ## Privacy and security
 
-Local uploads are processed in the browser. Speech uses the device's selected browser voice. The app does not upload local story text or audio. Position and bookmark locators plus volume preferences are stored in localStorage; **Forget this story** removes that story's position and bookmarks. **Clear everything** removes app-owned localStorage entries, app-prefixed Cache Storage/IndexedDB entries (none are currently used), and requests Microsoft session logout. The browser may retain a file the user explicitly selects according to its own behavior. For shared links, the URL and Microsoft token are held in server session memory while Graph retrieves the selected document; the file bytes pass through memory and are not written to disk. The API uses an in-memory session store for development; replace it with a protected server side store before multi-process production deployment, serve over HTTPS, set `NODE_ENV=production`, and use a strong `SESSION_SECRET`. The app is not a hosted or security-audited service.
+Local uploads are processed in the browser. Browser/OS speech cannot be exported; the optional Piper voice is downloaded from documented public model/runtime hosts and runs locally in a Web Worker. Story text and generated audio are not sent to those hosts or the reader API. Position and bookmark locators plus volume preferences are stored in localStorage; audiobook model files, export manifests, and generated audio chunks are stored in OPFS until deleted. **Forget this story** removes that story's position and bookmarks. The device-data viewer supports per-export/model deletion and **Clear cached audio**; **Clear everything** attempts to remove app-owned localStorage, Cache Storage/IndexedDB, audiobook OPFS files, the Piper model, and requests Microsoft session logout, reporting the observed result. The browser may retain a file the user explicitly selects according to its own behavior. For shared links, the URL and Microsoft token are held in server session memory while Graph retrieves the selected document; the file bytes pass through memory and are not written to disk. The API uses an in-memory session store for development; replace it with a protected server side store before multi-process production deployment, serve over HTTPS, set `NODE_ENV=production`, and use a strong `SESSION_SECRET`. The app is not a hosted or security-audited service.
 
 ## Current limitations
 
-- Microsoft Graph only reads documents the signed-in account can access; tenant policies and sharing restrictions still apply. No external neural TTS provider, OCR, audio chunk cache, permanent library, or deployment recipe for a particular host is included.
+- Microsoft Graph only reads documents the signed-in account can access; tenant policies and sharing restrictions still apply. No OCR, Voice Studio, cloud TTS, cover art, M4B/AAC, or permanent story library is included.
 - Browser speech voice availability and voice quality vary by OS/browser. Browser speech does not expose precise word timing; sentence highlights follow the active speech chunk.
+- Piper export has only one eligible English voice. Speed varies by device; inference and large-export behavior have not been benchmarked on this machine. File System Access direct saving is supported only in some Chromium contexts; other browsers rely on OPFS and browser download behavior. See [Audiobook export](./docs/AUDIOBOOK_EXPORT.md) for model licensing, storage, limits, and unverified platform paths.
 - Search stays in memory and in the browser. Browser speech does not expose precise word timing; playback volume changes restart the active sentence after a short debounce.
 - The reader currently renders one chapter at a time. Very large chapters are not virtualized.
 - Theme follows the selected reading theme; a separate system dark mode preference is not implemented.
