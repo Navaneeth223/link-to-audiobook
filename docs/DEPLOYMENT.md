@@ -12,7 +12,7 @@ The repository includes `vercel.json` and `api/[...path].mjs`. Both the local No
 4. Optional Microsoft sign-in: set `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_TENANT_ID` (`common` supports personal and organizational accounts), and `MICROSOFT_REDIRECT_URI` to `https://your-project.vercel.app/api/auth/callback`. Never create a `VITE_` variable for a secret.
 5. Set `VITE_API_BASE_URL` empty for the same-project API. `VITE_` values are compiled into browser code and are public. Optional `VITE_DONATION_LINKS` is a JSON array of verified voluntary support destinations.
 6. Click **Deploy**. Whenever an environment value changes, redeploy so the build and function receive the updated settings.
-7. Open `https://your-project.vercel.app/api/health`. A working API returns JSON with `ok`, `version`, and `providersConfigured.microsoftOAuth`; it never returns credentials. `microsoftOAuth: false` is expected when OAuth is not configured.
+7. Open `https://your-project.vercel.app/api/health`. A working API returns JSON with `ok`, `version`, `providersConfigured.microsoftOAuth`, and safe `configurationIssues` names; it never returns credentials. If Microsoft link reading is not configured, the page's **Check status** message lists the missing settings.
 8. Paste a public or account-authorized OneDrive/SharePoint link. Current link retrieval uses delegated Microsoft Graph OAuth; anonymous public-link access is not implemented yet. When the link is account-protected, the user must sign in using the configured Microsoft app. Local file upload works without OAuth.
 
 ### Optional Microsoft Entra registration

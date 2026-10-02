@@ -4,7 +4,6 @@ const vercel = process.env.VERCEL === '1';
 const port = Number(process.env.PORT || 8787);
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid PORT: use a whole number between 1 and 65535.');
 const sessionSecret = process.env.SESSION_SECRET || '';
-if (process.env.NODE_ENV === 'production' && sessionSecret.length < 32) throw new Error('SESSION_SECRET must be set to at least 32 characters in production.');
 const origins = (process.env.APP_ORIGINS || process.env.APP_ORIGIN || (vercel && process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:5173')).split(',').map(value => value.trim()).filter(Boolean);
 for (const origin of origins) {
   let parsed;
@@ -20,6 +19,7 @@ export const config = Object.freeze({
   clientSecret: process.env.MICROSOFT_CLIENT_SECRET || '',
   tenantId: process.env.MICROSOFT_TENANT_ID || 'common',
   redirectUri: process.env.MICROSOFT_REDIRECT_URI || `http://localhost:${port}/api/auth/callback`,
+  hasExplicitRedirectUri: Boolean(process.env.MICROSOFT_REDIRECT_URI),
   appOrigin: origins[0] || 'http://localhost:5173',
   maxDocumentBytes: vercel ? 4 * 1024 * 1024 : 40 * 1024 * 1024,
 });

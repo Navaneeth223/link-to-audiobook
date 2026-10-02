@@ -14,7 +14,14 @@ const app = express();
 if (process.env.NODE_ENV === 'production' || config.vercel) app.set('trust proxy', 1);
 const MAX_BYTES = config.maxDocumentBytes;
 const MAX_MB = Math.floor(MAX_BYTES / (1024 * 1024));
-const isConfigured = Boolean(config.clientId && config.clientSecret && config.sessionSecret);
+const production = process.env.NODE_ENV === 'production' || config.vercel;
+const missingMicrosoftConfiguration = [
+  ...(!config.sessionSecret || config.sessionSecret.length < 32 ? ['SESSION_SECRET (at least 32 characters)'] : []),
+  ...(!config.clientId ? ['MICROSOFT_CLIENT_ID'] : []),
+  ...(!config.clientSecret ? ['MICROSOFT_CLIENT_SECRET'] : []),
+  ...(production && !config.hasExplicitRedirectUri ? ['MICROSOFT_REDIRECT_URI'] : []),
+];
+const isConfigured = missingMicrosoftConfiguration.length === 0;
 const redirectUri = config.redirectUri;
 const msal = isConfigured ? new ConfidentialClientApplication({ auth: { clientId: config.clientId, authority: `https://login.microsoftonline.com/${config.tenantId}`, clientSecret: config.clientSecret } }) : null;
 const scopes = ['Files.Read', 'offline_access', 'openid'];
@@ -23,7 +30,12 @@ function apiError(res, status, code, message) { return res.status(status).json({
 app.disable('x-powered-by');
 app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc: ["'none'"], frameAncestors: ["'none'"], baseUri: ["'none'"], formAction: ["'self'", 'https://login.microsoftonline.com'] } }, crossOriginResourcePolicy: { policy: 'same-origin' } }));
 app.use((req, res, next) => {
-  if (req.headers.origin && !config.origins.includes(req.headers.origin)) return apiError(res, 403, 'ORIGIN_NOT_ALLOWED', 'This request origin is not allowed.');
+  const requestOrigin = req.headers.origin;
+  let sameOrigin = false;
+  if (requestOrigin) {
+    try { sameOrigin = new URL(requestOrigin).origin === `${req.protocol}://${req.get('host')}`; } catch { /* Invalid origins are rejected below. */ }
+  }
+  if (requestOrigin && !sameOrigin && !config.origins.includes(requestOrigin)) return apiError(res, 403, 'ORIGIN_NOT_ALLOWED', 'This request origin is not allowed.');
   if (req.headers.origin) { res.setHeader('Access-Control-Allow-Origin', req.headers.origin); res.setHeader('Vary', 'Origin'); res.setHeader('Access-Control-Allow-Credentials', 'true'); }
   if (req.method === 'OPTIONS') { res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS'); res.setHeader('Access-Control-Allow-Headers', 'Content-Type'); return res.status(204).end(); }
   res.setHeader('Cache-Control', 'no-store'); next();
@@ -55,7 +67,7 @@ async function downloadPinned(urlString) {
 }
 function requireConfigured(req, res, next) { if (!msal) return apiError(res, 503, 'MICROSOFT_NOT_CONFIGURED', 'Microsoft sign-in is not configured on this server.'); next(); }
 
-app.get('/api/health', (_req, res) => res.json({ ok: true, version: process.env.npm_package_version || '1.0.0', providersConfigured: { microsoftOAuth: isConfigured } }));
+app.get('/api/health', (_req, res) => res.json({ ok: true, version: process.env.npm_package_version || '1.0.0', providersConfigured: { microsoftOAuth: isConfigured }, configurationIssues: missingMicrosoftConfiguration }));
 app.get('/api/auth/status', (_req, res) => res.json({ ok: true, authenticated: Boolean(_req.session.accessToken && _req.session.tokenExpiresAt > Date.now()), configured: isConfigured }));
 app.get('/api/auth/login', requireConfigured, async (req, res, next) => {
   try { const state = crypto.randomBytes(32).toString('base64url'); const codeVerifier = crypto.randomBytes(32).toString('base64url'); const codeChallenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url'); req.session.oauthState = state; req.session.codeVerifier = codeVerifier; const url = await msal.getAuthCodeUrl({ scopes, redirectUri, state, codeChallenge, codeChallengeMethod: 'S256', prompt: 'select_account' }); res.redirect(url); } catch (error) { next(error); }

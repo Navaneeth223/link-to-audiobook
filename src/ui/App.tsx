@@ -26,7 +26,7 @@ import {
   X,
 } from 'lucide-react';
 import { extractFile, splitSentences, type Story } from '../core/document';
-import { apiFetch, responseErrorMessage } from '../core/http';
+import { apiFetch, apiUrl, responseErrorMessage } from '../core/http';
 import {
   bookmarkStorageKey,
   documentFingerprint,
@@ -427,6 +427,8 @@ export default function App() {
         )
       )
         throw new Error('Paste an HTTPS OneDrive or SharePoint sharing link.');
+      if (url.hostname === 'onedrive.live.com' && url.pathname === '/' && !url.search)
+        throw new Error('That is the OneDrive homepage. Open the document, choose “Copy link,” then paste its sharing link here.');
       setBusy(true);
       const response = await apiFetch('/api/documents/shared', {
         method: 'POST',
@@ -434,7 +436,7 @@ export default function App() {
         body: JSON.stringify({ url: url.href }),
       });
       if (response.status === 401) {
-        window.location.assign('/api/auth/login');
+        window.location.assign(apiUrl('/api/auth/login'));
         return;
       }
       if (!response.ok)
@@ -688,6 +690,13 @@ export default function App() {
       if (!response.ok || !data || typeof data !== 'object' || !('ok' in data) || data.ok !== true)
         throw new Error('The health check returned an error.');
       const version = 'version' in data && typeof data.version === 'string' ? data.version : 'unknown';
+      const issues = 'configurationIssues' in data && Array.isArray(data.configurationIssues)
+        ? data.configurationIssues.filter((item): item is string => typeof item === 'string')
+        : [];
+      if (issues.length) {
+        setApiStatus(`Reader API is reachable (version ${version}), but Microsoft link reading needs deployment setup: ${issues.join(', ')}.`);
+        return;
+      }
       setApiStatus(`Reader API is reachable (version ${version}).`);
     } catch {
       setApiStatus('Reader API is unreachable. Check the deployment, API base URL, and allowed origins.');
@@ -924,14 +933,16 @@ export default function App() {
               </span>
             </div>
           </aside>
-          <div className="landing-bottom">
-            <span>LISTEN A LITTLE CLOSER</span>
+          <footer className="landing-bottom">
+            <div className="landing-footer-summary">
+              <span className="landing-footer-kicker">LISTEN A LITTLE CLOSER</span>
+              <span className="landing-footer-proof">
+                <i aria-hidden="true" /> Local first <span aria-hidden="true">·</span> No account needed
+              </span>
+            </div>
             <button className="support-link" onClick={() => setSupportOpen(true)}>
-              Support this project <ChevronRight size={14} />
+              Support this project <ChevronRight size={14} aria-hidden="true" />
             </button>
-            <span>
-              LOCAL FIRST <i /> NO ACCOUNT NEEDED
-            </span>
             <nav className="legal-links" aria-label="Policies">
               <button onClick={() => setLegalPage('privacy')}>Privacy</button>
               <button onClick={() => setLegalPage('terms')}>Terms</button>
@@ -940,7 +951,10 @@ export default function App() {
               <button onClick={() => setLegalPage('voice')}>Voice data</button>
               <button onClick={() => setLegalPage('donations')}>Donations</button>
             </nav>
-          </div>
+            <span className="landing-footer-credit">
+              Developed with care by <strong>Navi</strong>
+            </span>
+          </footer>
         </main>
       ) : (
         <main className="reader-shell">
